@@ -1,0 +1,13 @@
+id	tissue	protein	conditions	replicate	path	comment
+BR.WDS.M.F.std.1	BR	WDS	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB1_local_GATCcounts.RData	
+BR.WDS.M.F.std.2	BR	WDS	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB2_local_GATCcounts.RData	
+SG.WDS.M.F.std.1	SG	WDS	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB3_local_GATCcounts.RData	
+SG.WDS.M.F.std.2	SG	WDS	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB4_local_GATCcounts.RData	
+BR.BEAF.M.F.std.1	BR	BEAF	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB5_local_GATCcounts.RData	
+BR.BEAF.M.F.std.2	BR	BEAF	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB6_local_GATCcounts.RData	
+SG.BEAF.M.F.std.1	SG	BEAF	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB7_local_GATCcounts.RData	
+SG.BEAF.M.F.std.2	SG	BEAF	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB8_local_GATCcounts.RData	
+BR.DAM.M.F.std.1	BR	DAM	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB9_local_GATCcounts.RData	
+BR.DAM.M.F.std.2	BR	DAM	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB10_local_GATCcounts.RData	
+SG.DAM.M.F.std.1	SG	DAM	M.F.std	1	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB11_local_GATCcounts.RData	
+SG.DAM.M.F.std.2	SG	DAM	M.F.std	2	/home/anton/Doc/Documents/SequenceData/DamID_IBprot/r_count/HSGA.IMKB.IMKB12_local_GATCcounts.RData	
