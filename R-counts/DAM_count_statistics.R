@@ -60,7 +60,7 @@ setwd(workDir)
 ################################### 
 WriteIntermediateFiles <- function(source, output.file) {
 	if (writeTemp == T) {
-		write.table(source, file=file.path(prefixDir, output.file), sep="\t", row.names=F, col.names=T, quote=F, dec=".", append=F)
+		write.table(source, file=file.path(prefixDir, output.file), sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
 	}
 }
 
