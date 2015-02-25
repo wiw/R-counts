@@ -1,9 +1,5 @@
 id	tissue	protein	conditions	replicate	path	comment
-TST.DAM.bam.std.1	TST	DAM	bam.std	1	/home/anton/backup/shev/rdata/DAM1_local_GATCcounts.RData	
-TST.LAM.bam.std.1	TST	LAM	bam.std	1	/home/anton/backup/shev/rdata/LAM1_local_GATCcounts.RData	
-TST.DAM.bam.std.2	TST	DAM	bam.std	2	/home/anton/backup/shev/rdata/DAM2_local_GATCcounts.RData	
-TST.LAM.bam.std.2	TST	LAM	bam.std	2	/home/anton/backup/shev/rdata/LAM2_local_GATCcounts.RData	
-TST.DAM.wt.std.1	TST	DAM	wt.std	1	/home/anton/backup/shev/rdata/1_CGATGT_L002_R1_001_local_GATCcounts.RData	
-TST.DAM.wt.std.2	TST	DAM	wt.std	2	/home/anton/backup/shev/rdata/2_TGACCA_L002_R1_001_local_GATCcounts.RData	
-TST.LAM.wt.std.1	TST	LAM	wt.std	1	/home/anton/backup/shev/rdata/3_ACAGTG_L002_R1_001_local_GATCcounts.RData	
-TST.LAM.wt.std.2	TST	LAM	wt.std	2	/home/anton/backup/shev/rdata/4_GCCAAT_L002_R1_001_local_GATCcounts.RData	
+SG.WDS.mf_DN_edge.1	SG	WDS	mf_DN_edge	1	/home/anton/data/R-script/R-counts/test/HSGA.IMKB.IMKB3_edge_local_GATCcounts.RData
+SG.WDS.mf_DN_inner.1	SG	WDS	mf_DN_inner	1	/home/anton/data/R-script/R-counts/test/HSGA.IMKB.IMKB3_inner_local_GATCcounts.RData
+SG.WDS.mf_DN_edge.2	SG	WDS	mf_DN_edge	2	/home/anton/data/R-script/R-counts/test/HSGA.IMKB.IMKB4_edge_local_GATCcounts.RData
+SG.WDS.mf_DN_inner.2	SG	WDS	mf_DN_inner	2	/home/anton/data/R-script/R-counts/test/HSGA.IMKB.IMKB4_inner_local_GATCcounts.RData
