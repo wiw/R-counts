@@ -21,7 +21,7 @@ library(gplots)
 
 # Declare variables
 ###################
-prefixDir <- "edge_inner" # directory for other experiments
+prefixDir <- "ludo" # directory for other experiments
 workDir <- getwd()	# working directory (WD)
 outputGff <- "gff"	# output folder for gff in WD
 outputWig <- "wig"	# output folder for wig in WD

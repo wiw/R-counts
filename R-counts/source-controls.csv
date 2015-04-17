@@ -1,9 +1,0 @@
-id	tissue	protein	conditions	replicate	path	comment
-BR.DAM.Repo-min.1	BR	DAM	Repo-min	1	/home/anton/data/ControlsData/1937_1_BR-repo-min-DAM-1a_CGATGTA_L002_R1_001_local_GATCcounts.RData	
-BR.LAM.Repo-min.1	BR	LAM	Repo-min	1	/home/anton/data/ControlsData/1937_3_BR-repo-min-LAM-1a_ACAGTGA_L002_R1_001_local_GATCcounts.RData	
-BR.DAM.Repo-min.2	BR	DAM	Repo-min	2	/home/anton/data/ControlsData/2325_1_BR-repo-min-DAM-2a_CGATGTA_L006_R1_001_local_GATCcounts.RData	
-BR.PC.Repo-min.1	BR	PC	Repo-min	1	/home/anton/data/ControlsData/2325_2_BR-repo-min-PC-1a_TGACCAA_L006_R1_001_local_GATCcounts.RData	
-BR.HP1.Repo-min.1	BR	HP1	Repo-min	1	/home/anton/data/ControlsData/2325_3_BR-repo-min-HP1-1a_ACAGTGA_L006_R1_001_local_GATCcounts.RData	
-BR.LAM.Repo-min.2	BR	LAM	Repo-min	2	/home/anton/data/ControlsData/2325_4_BR-repo-min-LAM-2a_GCCAATA_L007_R1_001_local_GATCcounts.RData	
-BR.PC.Repo-min.2	BR	PC	Repo-min	2	/home/anton/data/ControlsData/2325_5_BR-repo-min-PC-2a_CAGATCA_L007_R1_001_local_GATCcounts.RData	
-BR.HP1.Repo-min.2	BR	HP1	Repo-min	2	/home/anton/data/ControlsData/2325_6_BR-repo-min-HP1-2a_CTTGTAA_L007_R1_001_local_GATCcounts.RData	
