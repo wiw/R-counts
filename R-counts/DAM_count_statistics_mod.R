@@ -17,12 +17,15 @@
 #     
 ########################################################################
 	rm(list=ls())
-library(gplots)
+	library(gplots)
 
 # Declare variables
 ###################
-	prefixDir <- "edgeMarco" # directory for other experiments
-workDir <- getwd()	# working directory (WD)
+	prefixDir <- "edge_inner_bowtie_noexp_exp" # directory for other experiments
+	onlyEdge <- F
+	workDir <- getwd()	# working directory (WD)
+	# sourceDir <- "/home/anton/backup/tpoutput/bowtie/exp15_04_13"
+	# damIdDscrp <- read.delim("damid_description.csv", header=T, sep="\t", stringsAsFactors=F)
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
@@ -39,11 +42,10 @@ workDir <- getwd()	# working directory (WD)
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
 	someFiles <- c(9:16)	# the region of files which need calculate
-	onlyEdge <- T
 	dir.create(file.path(workDir, prefixDir), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputGff), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputWig), showWarnings = FALSE)
-dir.create(file.path(workDir, prefixDir, outputScttr), showWarnings = FALSE)
+	dir.create(file.path(workDir, prefixDir, outputScttr), showWarnings = FALSE)
 
 # Whether a script run earlier?
 ###############################
@@ -53,6 +55,31 @@ setwd(file.path(workDir, prefixDir))
 		startCol <- 0
 	}
 setwd(workDir)
+
+# Create samples list file
+##########################
+# filePath <- list.files(path=sourceDir, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
+# ins <- sub("([0-9_.a-zA-Z-]+)_(edge|inner)(.*)", "\\2", basename(filePath), perl=T)
+
+# samplesList <- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
+# names(samplesList) <- c("id", "tissue", "protein", "conditions", "replicate", "path")
+
+# samplesList$path <- gsub("(.+)(\\.fastq\\.gz)", paste("\\1", ins, "_local_GATCcounts.RData", sep=""), damIdDscrp$fastq.file, perl=TRUE)
+
+# for (name in names(fin)[1:5]){
+# colnumber <- which( colnames(fin)==name ) # or grep(name, colnames(fin))
+# if (colnumber == 1){
+# subst <- paste("\\1\\.\\2\\.\\3", ins, "\\.\\4", sep="")
+# } else if (colnumber %in% c(2,3,5)){
+# subst <- paste("\\", colnumber - 1, sep="")
+# } else {
+# subst <- paste("\\3", ins, sep="")
+# }
+# fin[[name]] <- gsub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damid$Data.set, perl=TRUE)
+# }
+
+# write.table(fin, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+
 ############################################
 ################ FUNCTIONS #################
 ############################################
@@ -222,7 +249,7 @@ DamIdSeqToWigGff <- function(dataSet) {
 # Scatter Plots on Averaged data function
 #########################################
 ScatterPlotting3D <- function(dataSet, tag) {
-	for (j in unique(sub("([a-zA-Z_\\.]+)\\.[0-9].+", "\\1", names(dataSet)[-c(1:7)], perl=T))) {
+	for (j in unique(sub("([a-zA-Z_\\.]+)\\.[0-9].*", "\\1", names(dataSet)[-c(1:7)], perl=T))) {
 		repSet <- sort(grep(j, names(dataSet), value=T))
 		if (length(repSet) > 1) {
 		bmp(filename=file.path(prefixDir, outputScttr, paste("scatter_on_", j, "_", name, "_", tag, ".bmp", sep="")), width=600*length(repSet), height=600*(length(repSet)-1), units = "px")
@@ -234,7 +261,7 @@ ScatterPlotting3D <- function(dataSet, tag) {
 					if (x != i) {
 						Cor.P <- round(cor(dataSet[[i]], dataSet[[x]], method="pearson", use="pairwise.complete.obs"), digits=2)
 						Cor.S <- round(cor(dataSet[[i]], dataSet[[x]], method="spearman", use="pairwise.complete.obs"), digits=2)
-						plot(x=dataSet[[i]], y=dataSet[[x]], cex=0.3, xlab=i, ylab=x, text(x=min(dataSet[[i]], na.rm=T) + 0.7, y=max(dataSet[[x]], na.rm=T) - 0.7, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+						plot(x=dataSet[[i]], y=dataSet[[x]], cex=0.3, xlab=i, ylab=x, text(x=min(dataSet[[i]], na.rm=T) + 1.5, y=max(dataSet[[i]], na.rm=T) - 1.5, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
 						rm(Cor.P)
 						rm(Cor.S)
 					}
