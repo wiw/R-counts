@@ -27,4 +27,5 @@ for (i in 1:length(seqnames(Dmelanogaster))){
    if (i == 1) GATCs <- GATC
    if (i > 1)  GATCs <- rbind(GATCs, GATC)
 }
+options(scipen=10)
 write.table(GATCs, "DmelGATCfragments-r5_LP120507.gff", quote=F, sep="\t", row.names=F, col.names=F)
