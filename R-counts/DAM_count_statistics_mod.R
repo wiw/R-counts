@@ -85,9 +85,9 @@ for (i in baseFile) {
 	}
 }
 rm(fileID, i)
-samplesList <- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
-names(samplesList) <- c("id", "tissue", "protein", "conditions", "replicate", "path")
-samplesList$path <- filePath
+samplesList <<- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
+names(samplesList) <<- c("id", "tissue", "protein", "conditions", "replicate", "path")
+samplesList$path <<- filePath
 for (colnumber in c(1:5)){
 	for (i in c(1:nrow(samplesList))){
 		ins <- sub("([0-9_.a-zA-Z-]+)_(edge|inner)(.*)", "\\2", basename(samplesList[i, 6]), perl=T)
@@ -99,9 +99,9 @@ for (colnumber in c(1:5)){
 		subst <- paste("\\3_", ins, sep="")
 		}
 		if (length(grep("paired", samplesList[i, 6])) != 0){
-			samplesList[i, colnumber] <- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9]+)_(?:R|F)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
+			samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9]+)_(?:R|F)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
 		} else {
-		samplesList[i, colnumber] <- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
+		samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
 		}
 		}
 }
