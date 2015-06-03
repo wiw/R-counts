@@ -1,12 +1,12 @@
 rm(list=ls())
 libraries <- c("Biostrings", "BSgenome.Dmelanogaster.UCSC.dm3")
-for (packet in libraries) {
+for (i in libraries) {
    source("http://bioconductor.org/biocLite.R")
-   if(packet %in% rownames(installed.packages()) == FALSE) {
-   print(paste("Warning! You need sudo access that install", packet, "library.", sep=" "))
-   biocLite(packet)
+   if(i %in% rownames(installed.packages()) == FALSE) {
+   print(paste("Warning! You need sudo access that install", i, "library.", sep=" "))
+   biocLite(i)
    } else {
-     library(packet)
+     library(i, character.only=T)
    }
 }
 for (i in 1:length(seqnames(Dmelanogaster))){
@@ -32,16 +32,16 @@ for (i in 1:length(seqnames(Dmelanogaster))){
 }
 GATCs$width <- GATCs$end - GATCs$start + 1
 
-GATCs.temp <- GATCs[GATCs$width != 8,]
-pr.ma <- GATCs[GATCs$width == 8, ]
+GATCs <- GATCs[GATCs$width != 8,]
+# pr.ma <- GATCs[GATCs$width == 8, ]
 
-gatc <- read.delim("GATCs.txt", header=T, stringsAsFactors=F, sep="\t")
+gatc <- read.delim("/home/anton/data/R-script/R-counts/GATCs.txt", header=T, stringsAsFactors=F, sep="\t")
 
-GATCs.temp$presence.ma <- gatc$presence.ma
-GATCs.temp$ID.il <- gatc$ID.il 
+GATCs$presence.ma <- gatc$presence.ma
+GATCs$ID.il <- gatc$ID.il 
 
-GATCs.temp <- rbind(GATCs.temp, pr.ma)
+# GATCs.temp <- rbind(GATCs.temp, pr.ma)
 
-GATCs.temp[is.na(GATCs.temp$presence.ma) == T, 6] <- 0
-GATCs <- GATCs.temp[order(GATCs.temp$ID), ]
+# GATCs.temp[is.na(GATCs.temp$presence.ma) == T, 6] <- 0
+# GATCs <- GATCs.temp[order(GATCs.temp$ID), ]
 write.table(GATCs, "GATCs_mod.txt", quote=F, sep="\t", row.names=F, col.names=T)

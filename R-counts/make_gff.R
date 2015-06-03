@@ -1,12 +1,12 @@
 rm(list=ls())
 libraries <- c("Biostrings", "BSgenome.Dmelanogaster.UCSC.dm3")
-for (packet in libraries) {
+for (i in libraries) {
    source("http://bioconductor.org/biocLite.R")
-   if(packet %in% rownames(installed.packages()) == FALSE) {
-   print(paste("Warning! You need sudo access that install", packet, "library.", sep=" "))
-   biocLite(packet)
+   if(i %in% rownames(installed.packages()) == FALSE) {
+   print(paste("Warning! You need sudo access that install", i, "library.", sep=" "))
+   biocLite(i)
    } else {
-     library(packet)
+     library(i, character.only=T)
    }
 }
 for (i in 1:length(seqnames(Dmelanogaster))){
@@ -33,5 +33,6 @@ for (i in 1:length(seqnames(Dmelanogaster))){
    if (i == 1) GATCs <- GATC
    if (i > 1)  GATCs <- rbind(GATCs, GATC)
 }
+GATCs <- GATCs[GATCs$end-GATCs$start+1 != 8,]
 options(scipen=10)
-write.table(GATCs, "DmelGATCfragments-r5_LP120507.gff", quote=F, sep="\t", row.names=F, col.names=F)
+write.table(GATCs, "DmelGATCfragments-r5_AI120515.gff", quote=F, sep="\t", row.names=F, col.names=F)
