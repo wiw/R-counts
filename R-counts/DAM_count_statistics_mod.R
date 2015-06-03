@@ -24,14 +24,13 @@
 	prefixDir <- "edge_inner_bowtie" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
-	sourceDir <- "/home/anton/backup/tpoutput/bowtie/exp2" # location your RData files
+	sourceDir <- "/home/anton/backup/tpoutput/bowtie/exp2" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
 	startCol <- 7	# the number of last column in GATCs file, default "7"
 	gatcFile <- paste(workDir, "/GATCs.txt", sep="")	# location you GATCs file
-	samplesListFile <- paste(workDir, "/source.csv", sep="")	# location you file with source data
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
 	usePseudoCounts <- F	# are you need to add pseudo counts into source data (T or F)? Default "T"
 	pseudoCounts <- c(0.01)		# the vector of pseudo counts, default "c(1)"
@@ -41,7 +40,7 @@
 	labelAcf <- c("A_ALL", "B_MA")	# the vector of acf label - please don't change this setting
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
-	someFiles <- c(9:16)	# the region of files which need calculate
+	useSomeFiles <- c(9:16)	# the region of files which need calculate
 
 # Create folders
 ################
@@ -303,52 +302,51 @@ ScatterPlotting3D <- function(dataSet, tag) {
 ################# END #################
 #######################################
 print("Run script")
-# Load GATC counts in data frame
-################################
 
 # Make samples list file
 ##########################
 MakeSamplesListFile(sourceDir, damIdLocation)
 
+# Load GATC counts in data frame
+################################
 if (startCol == 0) {
 	step01 <- read.delim(alreadyRun, header=T, as.is=T, dec=".")
-		startCol <- ncol(step01)
-		gatcs <- step01
+	startCol <- ncol(step01)
+	gatcs <- step01
 } else {
 	gatcs <- read.delim(gatcFile, header=T, as.is=T, dec=".")
 }
-samplesList <- read.delim(file=samplesListFile, header=T, dec=".", stringsAsFactors=F, as.is=T)
 if (onlyEdge == T) {
 	samplesList <- samplesList[grep("edge" ,samplesList$id), ]
 } else {
 	modS <- samplesList[grep("edge", samplesList$id), ]
-		modS$id <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), modS$id, perl=T)
-		modS$conditions <- gsub("(.+)", paste("\\1", "_inner", sep=""), modS$conditions, perl=T)
+	modS$id <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), modS$id, perl=T)
+	modS$conditions <- gsub("(.+)", paste("\\1", "_inner", sep=""), modS$conditions, perl=T)
 }
 if (needSomeFiles == T) {
-	samplesList <- samplesList[someFiles, ]
+	samplesList <- samplesList[useSomeFiles, ]
 }
 gatcs <- cbind(gatcs, matrix(data=NA, nrow=nrow(gatcs), ncol=nrow(samplesList)))
 	for (i in 1:nrow(samplesList)){
 		colnames(gatcs)[startCol+i] <- samplesList$id[i]
-			load(file=samplesList$path[i])
-			if (all(gatcs$ID.il == reads2GATC$ID)) gatcs[, startCol + i] <- reads2GATC$count
+		load(file=samplesList$path[i])
+		if (all(gatcs$ID.il == reads2GATC$ID)) gatcs[, startCol + i] <- reads2GATC$count
 	}
 rm(i)
 	if (onlyEdge != T) {
 		modG <- gatcs[, c(1:7, grep("edge", names(gatcs)))]
-			names(modG)[8:ncol(modG)] <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), names(modG)[8:ncol(modG)], perl=T)
-			for (enzyme in names(modG[8:ncol(modG)])) {
-				S <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "edge", "\\3", sep=""), enzyme, perl=T)
-					E <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "inner", "\\3", sep=""), enzyme, perl=T)
-					modG[[enzyme]] <- gatcs[[S]] + gatcs[[E]]
-			}
+		names(modG)[8:ncol(modG)] <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), names(modG)[8:ncol(modG)], perl=T)
+		for (enzyme in names(modG[8:ncol(modG)])) {
+			S <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "edge", "\\3", sep=""), enzyme, perl=T)
+			E <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "inner", "\\3", sep=""), enzyme, perl=T)
+			modG[[enzyme]] <- gatcs[[S]] + gatcs[[E]]
+		}
 gatcs <- modG
 samplesList <- modS
 rm(modS, modG)
 	}
 currentDate <- format(Sys.time(), "%d-%m-%Y")
-	load.gatc.df <- paste("DF_Counts_Step_01_Raw_Counts_", currentDate, ".csv", sep="")
+load.gatc.df <- paste("DF_Counts_Step_01_Raw_Counts_", currentDate, ".csv", sep="")
 WriteIntermediateFiles(source=gatcs, output.file=load.gatc.df)
 
 
@@ -364,9 +362,9 @@ WriteIntermediateFiles(source=DATA, output.file=use.chr.only)
 #######################
 	if (needCombine == T) {
 		print("Combine data into one")
-			DATA <- cbind(DATA[,1:7], CombineSamples(DATA))
-			opt.sum.samples <- paste("DF_Counts_Step_03_Summed_Samples_", currentDate, ".csv", sep="")
-			WriteIntermediateFiles(source=DATA, output.file=opt.sum.samples)
+		DATA <- cbind(DATA[,1:7], CombineSamples(DATA))
+		opt.sum.samples <- paste("DF_Counts_Step_03_Summed_Samples_", currentDate, ".csv", sep="")
+		WriteIntermediateFiles(source=DATA, output.file=opt.sum.samples)
 	}
 
 # Counts statistics
@@ -385,7 +383,7 @@ stat$chr.length.proportion <- round(100 * stat$chr.length.bp / genome.length, di
 			Data.only.chr <- DATA.only[(DATA$chr == chrs[i]), j]
 				if (j == 1) stat$GATCs.number[i] <- length(Data.only.chr)
 					stat[i, 4+j] <- sum(Data.only.chr)
-						rm(Data.only.chr)
+					rm(Data.only.chr)
 		}
 		rm(i)
 	}
@@ -394,11 +392,10 @@ rm(j)
 WriteIntermediateFiles(source=stat, output.file=statistics.a)
 	for (j in 1:(ncol(DATA.only))){
 		totalCounts <- sum(stat[, 4+j])
-			for (i in 1:length(chrs)){
-				stat[i, 4+j] <- round(100 * stat[i, 4+j] / totalCounts, digits=2)
-			}
-		rm(i)
-			rm(totalCounts)
+		for (i in 1:length(chrs)){
+			stat[i, 4+j] <- round(100 * stat[i, 4+j] / totalCounts, digits=2)
+		}
+		rm(i, totalCounts)
 	}
 rm(j)
 	statistics.b <- paste("DF_Counts_Step_04_Statistics_B_", currentDate, ".csv", sep="")
@@ -409,15 +406,15 @@ WriteIntermediateFiles(source=stat, output.file=statistics.b)
 DATAs <- list(DATA=DATA)
 	if (usePseudoCounts == T) {
 		print("Add Pseudo counts")
-			for ( i in pseudoCounts) {
-				num <- sub("^([0-1]*)(.?)([0-1]*$)", "\\1\\3", i)
-					DATA.pseudo <- assign(paste("pseudo", num, sep=""), DATA)
-					DATA.pseudo[, 8:ncol(DATA.pseudo)] <- DATA[, 8:ncol(DATA)] + i
-					pseudo.filename <- assign(paste("pseudo.fn", num, sep=""), paste("DF_Counts_Step_05_Pseudo_", num, "_Added_", currentDate, ".csv", sep=""))
-					DATA.pseudo.strname <- assign(paste("pseudo", num, sep=""), paste("pseudo", num, sep=""))
-					WriteIntermediateFiles(source=DATA.pseudo, output.file=pseudo.filename)
-					DATAs[[DATA.pseudo.strname]] <- DATA.pseudo
-			}
+		for ( i in pseudoCounts) {
+			num <- sub("^([0-1]*)(.?)([0-1]*$)", "\\1\\3", i)
+			DATA.pseudo <- assign(paste("pseudo", num, sep=""), DATA)
+			DATA.pseudo[, 8:ncol(DATA.pseudo)] <- DATA[, 8:ncol(DATA)] + i
+			pseudo.filename <- assign(paste("pseudo.fn", num, sep=""), paste("DF_Counts_Step_05_Pseudo_", num, "_Added_", currentDate, ".csv", sep=""))
+			DATA.pseudo.strname <- assign(paste("pseudo", num, sep=""), paste("pseudo", num, sep=""))
+			WriteIntermediateFiles(source=DATA.pseudo, output.file=pseudo.filename)
+			DATAs[[DATA.pseudo.strname]] <- DATA.pseudo
+		}
 		rm(i)
 	}
 
