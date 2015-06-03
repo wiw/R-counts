@@ -30,7 +30,7 @@
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
 	startCol <- 7	# the number of last column in GATCs file, default "7"
-	gatcFile <- paste(workDir, "/GATCs.txt", sep="")	# location you GATCs file
+	gatcFile <- paste(workDir, "/GATCs_mod.txt", sep="")	# location you GATCs file
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
 	usePseudoCounts <- F	# are you need to add pseudo counts into source data (T or F)? Default "T"
 	pseudoCounts <- c(0.01)		# the vector of pseudo counts, default "c(1)"
