@@ -21,11 +21,11 @@
 
 # Declare variables
 ###################
-	prefixDir <- "edge_inner_bowtie_noexp_exp" # directory for other experiments
-	onlyEdge <- F
+	prefixDir <- "edge_inner_bowtie" # output directory into working directory
+	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
-	# sourceDir <- "/home/anton/backup/tpoutput/bowtie/exp15_04_13"
-	# damIdDscrp <- read.delim("damid_description.csv", header=T, sep="\t", stringsAsFactors=F)
+	sourceDir <- "/home/anton/backup/tpoutput/bowtie/exp2" # location your RData files
+	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
@@ -42,6 +42,9 @@
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
 	someFiles <- c(9:16)	# the region of files which need calculate
+
+# Create folders
+################
 	dir.create(file.path(workDir, prefixDir), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputGff), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputWig), showWarnings = FALSE)
@@ -56,33 +59,56 @@ setwd(file.path(workDir, prefixDir))
 	}
 setwd(workDir)
 
-# Create samples list file
-##########################
-# filePath <- list.files(path=sourceDir, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
-# ins <- sub("([0-9_.a-zA-Z-]+)_(edge|inner)(.*)", "\\2", basename(filePath), perl=T)
-
-# samplesList <- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
-# names(samplesList) <- c("id", "tissue", "protein", "conditions", "replicate", "path")
-
-# samplesList$path <- gsub("(.+)(\\.fastq\\.gz)", paste("\\1", ins, "_local_GATCcounts.RData", sep=""), damIdDscrp$fastq.file, perl=TRUE)
-
-# for (name in names(fin)[1:5]){
-# colnumber <- which( colnames(fin)==name ) # or grep(name, colnames(fin))
-# if (colnumber == 1){
-# subst <- paste("\\1\\.\\2\\.\\3", ins, "\\.\\4", sep="")
-# } else if (colnumber %in% c(2,3,5)){
-# subst <- paste("\\", colnumber - 1, sep="")
-# } else {
-# subst <- paste("\\3", ins, sep="")
-# }
-# fin[[name]] <- gsub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damid$Data.set, perl=TRUE)
-# }
-
-# write.table(fin, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
-
 ############################################
 ################ FUNCTIONS #################
 ############################################
+
+# Make samples list file
+##########################
+MakeSamplesListFile <- function(SOURCE, DAMID) {
+filePath <- list.files(path=SOURCE, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
+baseFile <- unique(sub("(.*)_(edge|inner).*", "\\1", basename(filePath), perl=T))
+damIdDscrp <- read.delim(DAMID, header=T, sep="\t", stringsAsFactors=F)
+for (i in baseFile) {
+	if (length(grep("paired", i)) != 0){
+	clearFileName <- sub("(.*)_paired", "\\1", i, perl=T)
+	fileID <- subset(damIdDscrp, grepl(clearFileName, fastq.file))
+	} else {
+		fileID <- subset(damIdDscrp, grepl(i, fastq.file))
+		if (nrow(fileID) < 2){
+			fileID <- rbind(fileID, fileID)
+		}
+	}
+	if (grep(i, baseFile) == 1){
+		damIdDscrpCut <- fileID
+	} else {
+		damIdDscrpCut <- rbind(damIdDscrpCut, fileID)
+	}
+}
+rm(fileID, i)
+samplesList <- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
+names(samplesList) <- c("id", "tissue", "protein", "conditions", "replicate", "path")
+samplesList$path <- filePath
+for (colnumber in c(1:5)){
+	for (i in c(1:nrow(samplesList))){
+		ins <- sub("([0-9_.a-zA-Z-]+)_(edge|inner)(.*)", "\\2", basename(samplesList[i, 6]), perl=T)
+		if (colnumber == 1){
+		subst <- paste("\\1\\.\\2\\.\\3_", ins, "\\.\\4", sep="")
+		} else if (colnumber %in% c(2,3,5)){
+		subst <- paste("\\", colnumber - 1, sep="")
+		} else {
+		subst <- paste("\\3_", ins, sep="")
+		}
+		if (length(grep("paired", samplesList[i, 6])) != 0){
+			samplesList[i, colnumber] <- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9]+)_(?:R|F)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
+		} else {
+		samplesList[i, colnumber] <- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
+		}
+		}
+}
+rm(i, colnumber, ins, subst, damIdDscrpCut)
+write.table(samplesList, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+}
 
 # Write intermediate files function
 ################################### 
@@ -279,6 +305,11 @@ ScatterPlotting3D <- function(dataSet, tag) {
 print("Run script")
 # Load GATC counts in data frame
 ################################
+
+# Make samples list file
+##########################
+MakeSamplesListFile(sourceDir, damIdLocation)
+
 if (startCol == 0) {
 	step01 <- read.delim(alreadyRun, header=T, as.is=T, dec=".")
 		startCol <- ncol(step01)
