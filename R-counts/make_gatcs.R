@@ -1,8 +1,14 @@
 rm(list=ls())
-
-library(Biostrings)
-library(BSgenome.Dmelanogaster.UCSC.dm3)
-
+libraries <- c("Biostrings", "BSgenome.Dmelanogaster.UCSC.dm3")
+for (packet in libraries) {
+   source("http://bioconductor.org/biocLite.R")
+   if(packet %in% rownames(installed.packages()) == FALSE) {
+   print(paste("Warning! You need sudo access that install", packet, "library.", sep=" "))
+   biocLite(packet)
+   } else {
+     library(packet)
+   }
+}
 for (i in 1:length(seqnames(Dmelanogaster))){
    GATC.temp <- matchPattern("GATC", DNAString(Dmelanogaster[[i]]), max.mismatch=0, fixed=T)
    GATC <- as.data.frame(matrix(data=NA, nrow=1+length(GATC.temp), ncol=7, byrow=F, dimnames=NULL))
