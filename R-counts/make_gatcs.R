@@ -24,7 +24,7 @@ for (i in 1:length(seqnames(Dmelanogaster))){
    
    num <- seq(1, nrow(GATC[GATC$chr == sub("chr", "", seqnames(Dmelanogaster)[i]), ]))
 
-   GATC$ID <- paste("r5GATC", seqnames(Dmelanogaster)[i], formatC(num, width=5, flag="0"), sep="")
+   GATC$ID <- paste("r5GATC", sub("(chr)(.+)", "\\2", seqnames(Dmelanogaster)[i]), formatC(num, width=5, flag="0"), sep="")
    rm(GATC.temp)
 
    if (i == 1) GATCs <- GATC

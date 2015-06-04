@@ -25,6 +25,7 @@ for (i in 1:length(seqnames(Dmelanogaster))){
    GATC$end[1+length(GATC.temp)] <- length(DNAString(Dmelanogaster[[i]]))
    
    GATC[, c(6:8)] <- "."
+   GATC <- GATC[GATC$end-GATC$start+1 !=8, ]
 	num <- seq(1, nrow(GATC[GATC$chr == sub("chr", "", seqnames(Dmelanogaster)[i]), ]))
    GATC$ID <- paste("ID=gene:DmelGATCr5", seqnames(Dmelanogaster)[i], formatC(num, width=5, flag="0"), sep="")
 
@@ -33,6 +34,5 @@ for (i in 1:length(seqnames(Dmelanogaster))){
    if (i == 1) GATCs <- GATC
    if (i > 1)  GATCs <- rbind(GATCs, GATC)
 }
-GATCs <- GATCs[GATCs$end-GATCs$start+1 != 8,]
 options(scipen=10)
 write.table(GATCs, "DmelGATCfragments-r5_AI120515.gff", quote=F, sep="\t", row.names=F, col.names=F)
