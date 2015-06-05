@@ -21,10 +21,10 @@
 
 # Declare variables
 ###################
-	prefixDir <- "yurii" # output directory into working directory
+	prefixDir <- "hmm" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
-	sourceDir <- "/home/anton/backup/tpoutput/bowtie/yurii" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
+	sourceDir <- "/home/anton/backup/tpoutput/HMM" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
@@ -443,8 +443,8 @@ for (name in names(DATAs.rpm)) {
 			rm(column.sum)
 	}
 	rm(i)
-		calc.rpm.file <- paste("DF_Counts_Step_06_RPMs_", name, "_", currentDate, ".csv", sep="")
-		WriteIntermediateFiles(source=DATAs.rpm[[name]], output.file=calc.rpm.file)
+	calc.rpm.file <- paste("DF_Counts_Step_06_RPMs_", name, "_", currentDate, ".csv", sep="")
+	WriteIntermediateFiles(source=DATAs.rpm[[name]], output.file=calc.rpm.file)
 
 # Correlation on Channels
 #########################
