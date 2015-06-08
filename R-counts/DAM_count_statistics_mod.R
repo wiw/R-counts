@@ -18,6 +18,8 @@
 ########################################################################
 	rm(list=ls())
 	library(gplots)
+	library(snapCGH)
+	library(cluster)
 
 # Declare variables
 ###################
@@ -29,6 +31,7 @@
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
+	outputDomain <- "domains"
 	startCol <- 7	# the number of last column in GATCs file, default "7"
 	gatcFile <- paste(workDir, "GATCs.txt", sep="/")	# location you GATCs file
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
@@ -48,7 +51,7 @@
 	dir.create(file.path(workDir, prefixDir, outputGff), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputWig), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputScttr), showWarnings = FALSE)
-
+	dir.create(file.path(workDir, prefixDir, outputGff, outputDomain), showWarnings = FALSE)
 # Whether a script run earlier?
 ###############################
 setwd(file.path(workDir, prefixDir))
@@ -297,6 +300,125 @@ ScatterPlotting3D <- function(dataSet, tag) {
 			print(paste("Skip make the Scatter Plots from", j, sep=" "))
 		}
 	}
+}
+# FeatureCalls to GFF function
+##############################
+FeatureCalls.to.GFF.like <- function(start.coordinate, end.coordinate, feature.type) {
+   e.ind <- cumsum(rle(feature.type)$lengths)
+   s.ind <- c(1, e.ind[1:(length(e.ind)-1)]+1)
+   gff <- data.frame(start=start.coordinate[s.ind], end=end.coordinate[e.ind], value=feature.type[s.ind])
+   invisible(gff)
+}
+
+# Run biological Headen Mark Model function
+###########################################
+runBioHMM <- function (mval, datainfo, useCloneDists = TRUE, criteria = "AIC", delta = NA, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
+	crit = TRUE
+	if (criteria == "AIC") {
+		aic = TRUE
+		bic = FALSE
+	} else if (criteria == "BIC") {
+		bic = TRUE
+		aic = FALSE
+	} else crit = FALSE
+	if ((crit == 1) || (crit == 2)) {
+		if (criteria == "BIC") {
+			if (is.na(delta)) {
+				delta <- c(1)
+			}
+		}
+		res <- try(fit.model(obs = mval, datainfo = datainfo, useCloneDists = useCloneDists, aic = aic, bic = bic, delta = delta, var.fixed = var.fixed, epsilon = epsilon, numiter = numiter))$out.list$state
+	}
+	else {
+		cat("You must enter AIC or BIC for the criteria argument\n")
+	}
+}
+
+# Use fit model function
+########################
+fit.model <- function (obs, datainfo = NULL, useCloneDists = TRUE, aic = TRUE, bic = FALSE, delta = 1, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
+    kb <- datainfo$start
+    if (useCloneDists) {
+        dists.pre = kb[2:length(kb)] - kb[1:(length(kb) - 1)]
+        dists = dists.pre/(max(dists.pre))
+    } else {
+        dists <- rep(1, length(kb))
+    }
+    covars <- as.matrix(dists)
+    obs.ord <- obs[order(kb)]
+    kb.ord <- kb[order(kb)]
+    ind.nonna <- which(!is.na(obs.ord))
+    data <- obs.ord[ind.nonna]
+    kb <- kb.ord[ind.nonna]
+    numobs <- length(data)
+    if (numobs > 5) {
+        temp2 <- clara(data, 2)
+        init.mean.two <- temp2$medoids
+        init.var.two <- vector()
+        if (var.fixed == FALSE) {
+            for (i in 1:2) {
+                if (length(temp2$data[temp2$clustering == i]) > 
+                  1) 
+                  init.var.two[i] <- log(sqrt(var(temp2$data[temp2$clustering == 
+                    i])))
+                else init.var.two[i] <- log(0.5)
+            }
+        } else {
+            init.var.two[1:2] <- log(sqrt(var(data)))
+        }
+        z2.init <- c(init.mean.two[, 1], init.var.two, -1, -3.6, 
+            -3.6, 0)
+        z.pre <- run.nelder(numobs, z2.init, data, 
+            covars, var.fixed, epsilon, numiter, i)
+        if (!is.nan(z.pre$x[1])) {
+            z2 <- find.param.two(z.pre, var.fixed)
+        } else {
+            z2 <- NULL
+        }
+        if (aic) {
+            factor <- 2
+        } else if (bic) {
+            factor <- log(numobs) * delta
+        } else {
+            stop("No criteria selected")
+        }
+        z <- z2
+        nstates <- 2
+        trans.mat <- list()
+        for (j in 1:(length(data) - 1)) {
+            trans.mat[[j]] <- z$LH.trans + exp(-(covars[j, 
+              1]^(z$rate1)) * prod(covars[j, -1])) * z$RH.trans
+        }
+        Vit.seg <- Viterbi.two(data, 
+            z, trans.mat)
+        maxstate.unique <- unique(Vit.seg)
+        mean <- rep(0, length(data))
+        var <- rep(0, length(data))
+        for (m in 1:length(maxstate.unique)) {
+            mean[Vit.seg == maxstate.unique[m]] <- mean(data[Vit.seg == 
+              maxstate.unique[m]])
+            var[Vit.seg == maxstate.unique[m]] <- var(data[Vit.seg == 
+              maxstate.unique[m]])
+        }
+        out <- cbind(matrix(Vit.seg, ncol = 1), matrix(mean, 
+            ncol = 1), matrix(var, ncol = 1))
+        out.all <- matrix(NA, nrow = length(kb.ord), ncol = 4)
+        out.all[ind.nonna, 1:3] <- out
+        out.all[, 4] <- obs.ord
+        out.all <- as.data.frame(out.all)
+        dimnames(out.all)[[2]] <- c("state", "mean", "var", "obs")
+        numstates <- length(unique(Vit.seg))
+    } else {
+        out.all <- matrix(NA, nrow = length(kb.ord), ncol = 4)
+        out.all[ind.nonna, 1] <- c(rep(1, numobs))
+        out.all[ind.nonna, 2] <- c(rep(mean(obs.ord), numobs))
+        out.all[ind.nonna, 3] <- c(rep(var(obs.ord), numobs))
+        out.all[ind.nonna, 4] <- obs.ord
+        out.all <- as.data.frame(out.all)
+        dimnames(out.all)[[2]] <- c("state", "mean", "var", "obs")
+        numstates = 1
+    }
+    list(out.list = out.all, nstates.list = numstates)
 }
 #######################################
 ################# END #################
@@ -558,6 +680,89 @@ rm(name)
 					print(paste("Stop calculate from averaged", name, sep=" "))
 			}
 	}
+
+###############################
+# Start calculate BioHMM data #
+###############################
+
+# By sample use only DATA, without pseudo counts
+listVar <- ls()
+listVar <- listVar[-which(listVar %in% c("DATAs.norm.ave", "outputGff", "workDir", "prefixDir", "fit.model", "FeatureCalls.to.GFF.like", "runBioHMM", "outputDomain"))]
+rm(list=listVar, listVar)
+
+chromosomesVector <- unique(DATAs.norm.ave$DATA$chr)
+HMM.data <- list()
+DOMAIN.data <- list()
+for (listItem in 8:length(DATAs.norm.ave$DATA)) {
+	DATA.name <- sub("(.*)(_edge|_edge_inner)\\.norm\\.ave", "\\1", names(DATAs.norm.ave$DATA)[listItem])
+	HMM.data[[DATA.name]] <- list()
+	print(paste("Start calculate BioHMM data from", DATA.name, sep=" "))
+	for (chr in 1:length(chromosomesVector)) {
+		chrCoord <- which(DATAs.norm.ave$DATA$chr == chromosomesVector[chr])
+		dataframe.name <- paste("chr", chromosomesVector[chr], sep="_")
+		HMM.data[[DATA.name]][[dataframe.name]] <- DATAs.norm.ave$DATA[chrCoord, c(1:7, listItem)]
+
+		names(HMM.data[[DATA.name]][[dataframe.name]])[8] <- "DamID.value"
+		HMM.data[[DATA.name]][[dataframe.name]] <- HMM.data[[DATA.name]][[dataframe.name]][!is.na(HMM.data[[DATA.name]][[dataframe.name]]$DamID.value), ]
+
+		print(paste("I'm run BioHMM data from chromosome", chromosomesVector[chr], sep=" "))
+		HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output <- runBioHMM(mval=HMM.data[[DATA.name]][[dataframe.name]]$DamID.value, datainfo=HMM.data[[DATA.name]][[dataframe.name]], useCloneDists=T)
+
+		classifier <- aggregate(x=HMM.data[[DATA.name]][[dataframe.name]]$DamID.value, by=list(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output), FUN=mean)
+ 		
+ 		if (nrow(classifier) == 2){
+			# notify if there is a problem with groupping the BioHMM outputs ("1s" and "2s") 
+			if (classifier$Group.1[1] !=1){
+				print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 1!"), sep="")
+			}
+			if (classifier$Group.1[2] !=2){
+				print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 2!"), sep="")
+			}
+			 
+			# if "1s" are targets and "2s" are non-targets
+			if ((classifier$x[1] > 0) & (classifier$x[2] < 0)) {
+			print(paste(DATA.name, ", ", dataframe.name, " - '1s' are targets and '2s' are non-targets", sep=""))
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 1
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 0
+			}
+			# if "1s" are non-targets and "2s" are targets
+			if ((classifier$x[1] < 0) & (classifier$x[2] > 0)) {
+			print(paste(DATA.name, ", ", dataframe.name, " - '1s' are non-targets and '2s' are targets", sep=""))
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 1
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 0
+			}
+
+			# if it is not clear what is what
+			if ((classifier$x[1] < 0) & (classifier$x[2] < 0)) {
+				print(paste(DATA.name, ", ", dataframe.name, " - all data less then zero!", sep=""))
+			}
+
+			# if it is not clear what is what
+			if ((classifier$x[1] > 0) & (classifier$x[2] > 0)) {
+				print(paste(DATA.name, ", ", dataframe.name, " - all data more then zero!", sep=""))
+			}
+		} else {
+			print(paste(DATA.name, ", ", dataframe.name, " - not enough data!", sep=""))
+		}
+		if ("target" %in% names(HMM.data[[DATA.name]][[dataframe.name]])){
+			domains <- FeatureCalls.to.GFF.like(start.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$start, end.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$end, feature.type=HMM.data[[DATA.name]][[dataframe.name]]$target)
+			domains <- cbind(chr=HMM.data[[DATA.name]][[dataframe.name]]$chr[1], domains, stringsAsFactors=F)
+			domains <- domains[domains$value==1,]
+			domains <- cbind(domains, NA, NA, NA, NA, NA)
+			domains <- domains[,c(1,5,6,2,3,4,7,8,9)]
+			names(domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+			protein.name <- tolower(sub("([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z_0-9]+)", "\\2.domain", DATA.name, perl=T))
+			DATA.domain.name <- sub("(.*)", "\\1.domains", DATA.name, perl=T)
+			domains$feature[domains$score==1] <- protein.name
+			domains[, c(2,7:9)] <- "."
+			if (chr == 1) {DOMAIN.data[[DATA.domain.name]] <- domains;} else {DOMAIN.data[[DATA.domain.name]] <- rbind(DOMAIN.data[[DATA.domain.name]], domains);}
+		} else {
+			print(paste("No data in ", DATA.name, " - ", dataframe.name, ".", sep=""))
+		}
+	}
+	gff.file <- file.path(prefixDir, outputGff, outputDomain, paste(DATA.domain.name, "gff", sep="."))
+	write.table(DOMAIN.data[[DATA.domain.name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+}
 print("Congratulations!!!")
 
 
