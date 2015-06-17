@@ -23,15 +23,16 @@
 
 # Declare variables
 ###################
-	prefixDir <- "hmm" # output directory into working directory
+	prefixDir <- "filter" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
-	sourceDir <- "/home/anton/backup/tpoutput/HMM" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
+	sourceDir <- "/home/anton/backup/tpoutput/filter" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
 	outputDomain <- "domains"
+	outputCleanStat <- "clean_stat"
 	startCol <- 7	# the number of last column in GATCs file, default "7"
 	gatcFile <- paste(workDir, "GATCs.txt", sep="/")	# location you GATCs file
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
@@ -52,6 +53,7 @@
 	dir.create(file.path(workDir, prefixDir, outputWig), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputScttr), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputGff, outputDomain), showWarnings = FALSE)
+	dir.create(file.path(workDir, prefixDir, outputCleanStat), showWarnings = FALSE)
 # Whether a script run earlier?
 ###############################
 setwd(file.path(workDir, prefixDir))
@@ -420,6 +422,16 @@ fit.model <- function (obs, datainfo = NULL, useCloneDists = TRUE, aic = TRUE, b
     }
     list(out.list = out.all, nstates.list = numstates)
 }
+
+# Calculate coordinate for filter
+#################################
+CalculateCoordinate <- function(x, y){
+  if (index[x] == T){
+    RhsMatrix <- matrix(c(-1*Intercept,-(DATA.filter[x, 9]+DATA.filter[x, 8]/Slope)), nrow=2, ncol=1, byrow=T)
+    Result <- Coef.Matrix %*% RhsMatrix
+    Result[y,1]
+  }
+}
 #######################################
 ################# END #################
 #######################################
@@ -479,6 +491,102 @@ WriteIntermediateFiles(source=gatcs, output.file=load.gatc.df)
 	use.chr.only <- paste("DF_Counts_Step_02_Useful_Chrs_Only_", currentDate, ".csv", sep="")
 WriteIntermediateFiles(source=DATA, output.file=use.chr.only)
 
+# Filter DATA
+#############
+set <- unique(sub("(.*)\\.([0-9]?)$", "\\1", names(DATA)[8:length(DATA)], perl=T))
+DATA.outfilter <- DATA[, 1:7]
+for (i in set){
+	protein.set <- grep(i, names(DATA))
+	if (length(protein.set) == 1) {
+		DATA.outfilter[[grep(i, names(DATA), value=T)]] <- DATA[, protein.set]
+	}
+	if (length(protein.set) >= 2) {
+		if (length(protein.set) > 2) { 
+			cor.df <- as.data.frame(matrix(0, nrow=length(protein.set), ncol=length(protein.set)))
+			colnames(cor.df) <- protein.set
+			rownames(cor.df) <- protein.set
+			for (cor1 in protein.set) {
+				for (cor2 in protein.set) {
+					if (cor2 != cor1) {
+					cor.df[grep(cor1, rownames(cor.df)), grep(cor2, colnames(cor.df))]	<- cor(DATA[, cor1], DATA[, cor2], method="pearson", use="pairwise.complete.obs")
+					}
+				}
+			}	
+			sample2 <- as.numeric(colnames(cor.df)[max(grep(max(cor.df), cor.df))])
+			sample1 <- as.numeric(rownames(cor.df)[grep(max(cor.df), cor.df[, max(grep(max(cor.df), cor.df))])])
+			DATA.filter <- DATA[,c(1:7, sample1, sample2)]
+		} else {
+			DATA.filter <- DATA[,c(1:7, grep(i, names(DATA)))]
+		}
+		for (name in c(8:9)) DATA.filter[, name][DATA[, name]==0] <- NA
+		index <- complete.cases(DATA.filter[,8], DATA.filter[,9])
+		Rep.Slope <- lm(DATA.filter[,9] ~ DATA.filter[,8])
+		Intercept <- Rep.Slope$coefficients[[1]]
+		Slope <- Rep.Slope$coefficients[[2]]
+		Coef.Matrix <- solve(matrix(c(Slope,-1,-1/Slope,-1), nrow=2, ncol=2, byrow=T))
+		DATA.nrow <- c(1:length(index))
+	
+		X.Coord <- sapply(DATA.nrow, CalculateCoordinate, y=1)
+		X.Coord[sapply(X.Coord, is.null)] <- NA
+		DATA.filter$Rep.Slope.X <- unlist(X.Coord)
+	
+		Y.Coord <- sapply(DATA.nrow, CalculateCoordinate, y=2)
+		Y.Coord[sapply(Y.Coord, is.null)] <- NA
+		DATA.filter$Rep.Slope.Y <- unlist(Y.Coord)
+	
+		index.sorted <- order(DATA.filter$Rep.Slope.X, decreasing=F, na.last=NA)
+		results.df <- as.data.frame(matrix(nrow=0, ncol=3))
+	
+		DATA.list.out <- list()
+		for (bin.size in c(0, 100, 200, 500, seq(1000, 10000, 1000), 15000, seq(20000, 50000, 10000), sum(!is.na(DATA.filter$Rep.Slope.X)))) {
+			if (bin.size == 0) {
+				Pearson.Cor <- cor(DATA.filter[, 8], DATA.filter[, 9], method="pearson", use="pairwise.complete.obs")
+				results.df <- rbind(results.df, data.frame("Bin.Size"=bin.size, "Number.of.Removed.GATCs"=0, "Pearson.Cor"=Pearson.Cor))
+			} else {
+				number.of.bins <- ceiling(sum(!is.na(DATA.filter$Rep.Slope.X))/bin.size)
+				for (item in 1:number.of.bins) {
+					if (item < number.of.bins) DATA.ordered.subset <- DATA.filter[(index.sorted[(1+bin.size*(item-1)):(bin.size*item)]),]
+					if (item == number.of.bins) DATA.ordered.subset <- DATA.filter[(index.sorted[(1+bin.size*(item-1)):(sum(!is.na(DATA.filter$Rep.Slope.X)))]),]
+					DATA.ordered.subset$Rep.Ratio <- log2(DATA.ordered.subset[, 8]/DATA.ordered.subset[, 9])
+					filter.index <- (DATA.ordered.subset$Rep.Ratio > (mean(DATA.ordered.subset$Rep.Ratio) - 2*sd(DATA.ordered.subset$Rep.Ratio))) & (DATA.ordered.subset$Rep.Ratio < (mean(DATA.ordered.subset$Rep.Ratio) + 2*sd(DATA.ordered.subset$Rep.Ratio)))
+					for (name in c(8:9)) DATA.ordered.subset[[names(DATA.ordered.subset)[name]]][filter.index == F] <- NA
+					if (item == 1) {
+						DATA.filtered <- DATA.ordered.subset
+						} else {
+							DATA.filtered <- rbind(DATA.filtered, DATA.ordered.subset)
+						}
+				}
+				DATA.merged <- DATA[, c(1:7, grep(names(DATA.filter)[8], names(DATA)), grep(names(DATA.filter)[9], names(DATA)))]
+				for (name in paste(names(DATA.filter)[8:9], "filt", sep=".")) DATA.merged[,name] <- NA
+				index.merge <- match(DATA.merged$ID[index.sorted], DATA.filtered$ID)
+				for (name in 10:11) DATA.merged[index.sorted, name] <- DATA.filtered[index.merge, name-2]
+				DATA.merged$note <- "kept"
+				DATA.merged$note[(!is.na(DATA.merged[, 8] + DATA.merged[, 9]) + !is.na(DATA.merged[, 10] + DATA.merged[, 11])) == 1] <- "filtered"
+				RemovedGATCs <- sum(DATA.merged$note == "filtered")
+				Pearson.Cor <- cor(DATA.merged[, 10], DATA.merged[, 11], method="pearson", use="pairwise.complete.obs")
+				results.df <- rbind(results.df, data.frame(Bin.Size=bin.size, Number.of.Removed.GATCs=RemovedGATCs, Pearson.Cor=Pearson.Cor))
+				for (name in 10:11) DATA.merged[is.na(DATA.merged[, name]), name] <- 0
+				DATA.list.out[[paste("bins", bin.size, sep="_")]] <- DATA.merged[, 10:11]
+				names(DATA.list.out[[paste("bins", bin.size, sep="_")]]) <- sub("(.*)\\.filt", "\\1", names(DATA.list.out[[paste("bins_", bin.size, sep="")]]), perl=T)
+				write.results.df <- file.path(outputCleanStat, paste("Clean_results_for_", i, ".csv", sep=""))
+				WriteIntermediateFiles(source=results.df, output.file=write.results.df)
+			}
+		}
+		results.df.part <- results.df[results.df$Pearson.Cor > (max(results.df$Pearson.Cor) - 0.1*sd(results.df$Pearson.Cor)),]
+		Use.Bin.Size <- results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Bin.Size"]
+		AllUsefullData <- sum(DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[1]]] > 0 & DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[2]]] > 0)
+		UsefullData <- sum(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1] > 0 & DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2] > 0)
+		if (exists("stat.clean.df") == T) {
+			stat.clean.df <- rbind(stat.clean.df, data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData))
+		} else {
+			stat.clean.df <- data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData)
+		}
+		DATA.outfilter <- cbind(DATA.outfilter, DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])
+	}
+}
+write.stat.clean.df <- file.path(outputCleanStat, "Filter_statistics_for_all_samples.csv")
+WriteIntermediateFiles(source=stat.clean.df, output.file=write.stat.clean.df)
+DATA <- DATA.outfilter
 
 # Combine data into one
 #######################
