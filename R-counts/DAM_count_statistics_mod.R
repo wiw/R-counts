@@ -23,7 +23,7 @@
 
 # Declare variables
 ###################
-	prefixDir <- "filter" # output directory into working directory
+	prefixDir <- "correction" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
 	sourceDir <- "/home/anton/backup/tpoutput/filter" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
@@ -147,12 +147,9 @@ CombineSamples <- function(dataFrame) {
 ############################
 MainCorrelations <- function(dataSet, corrMethod, labelHeatmap, use.opt="everything", suffixCSV, suffixPDF, corr.on.file, createPDF=T, counts=F) {  
 	for (m in corrMethod) {
-		if (counts == T) {
-			name <- "DATA"
-		}
 		corr.file <- assign(paste(m, ".cor", sep=""), as.data.frame(PearsonAndSpearmanCorrelations(dataSet, m, use.opt)))
 			if (writeTemp == T) {
-				write.table(corr.file, file=file.path(prefixDir, paste("DF_Counts_Step_", suffixCSV, "_", name, "_", m, "_", currentDate, ".csv", sep="")), sep="\t", row.names=T, col.names=T, quote=F, dec=".", append=F)
+				write.table(corr.file, file=file.path(prefixDir, paste("DF_Counts_Step_", suffixCSV, "_", if (counts == T) {""} else {paste(name, "_", sep="")}, m, "_", currentDate, ".csv", sep=""), sep="\t", row.names=T, col.names=T, quote=F, dec=".", append=F))
 			}
 		corr.file <- as.matrix(corr.file)
 			if (createPDF == T){
@@ -258,6 +255,7 @@ DamIdSeqToWigGff <- function(dataSet) {
 		rm(j)
 	}
 }
+
 # Scatter Plots on Averaged data function
 #########################################
 # ScatterPlotting <- function(dataSet, tag) {
@@ -282,7 +280,7 @@ ScatterPlotting3D <- function(dataSet, tag) {
 	for (j in unique(sub("([a-zA-Z_\\.]+)\\.[0-9].*", "\\1", names(dataSet)[-c(1:7)], perl=T))) {
 		repSet <- sort(grep(j, names(dataSet), value=T))
 		if (length(repSet) > 1) {
-		bmp(filename=file.path(prefixDir, outputScttr, paste("scatter_on_", j, "_", name, "_", tag, ".bmp", sep="")), width=600*length(repSet), height=600*(length(repSet)-1), units = "px")
+		bmp(filename=file.path(prefixDir, outputScttr, paste("scatter_on_", j, "_", tag, ".bmp", sep="")), width=600*length(repSet), height=600*(length(repSet)-1), units = "px")
 		par(mfrow=c(length(repSet)-1, length(repSet)))
 		par(mai=c(1.5, 1.5, 0.7, 0.5))
 		par(cex=1.5)
@@ -454,8 +452,8 @@ if (onlyEdge == T) {
 	samplesList <- samplesList[grep("edge" ,samplesList$id), ]
 } else {
 	modS <- samplesList[grep("edge", samplesList$id), ]
-	modS$id <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), modS$id, perl=T)
-	modS$conditions <- gsub("(.+)", paste("\\1", "_inner", sep=""), modS$conditions, perl=T)
+	modS$id <- gsub("(.+)(edge)(.+)", paste("\\1", "all", "\\3", sep=""), modS$id, perl=T)
+	modS$conditions <- gsub("(.+)edge", paste("\\1", "all", sep=""), modS$conditions, perl=T)
 }
 if (needSomeFiles == T) {
 	samplesList <- samplesList[useSomeFiles, ]
@@ -469,15 +467,15 @@ gatcs <- cbind(gatcs, matrix(data=NA, nrow=nrow(gatcs), ncol=nrow(samplesList)))
 rm(i)
 	if (onlyEdge != T) {
 		modG <- gatcs[, c(1:7, grep("edge", names(gatcs)))]
-		names(modG)[8:ncol(modG)] <- gsub("(.+)(edge)(.+)", paste("\\1\\2", "_inner", "\\3", sep=""), names(modG)[8:ncol(modG)], perl=T)
+		names(modG)[8:ncol(modG)] <- gsub("(.+)(edge)(.+)", paste("\\1", "all", "\\3", sep=""), names(modG)[8:ncol(modG)], perl=T)
 		for (enzyme in names(modG[8:ncol(modG)])) {
-			S <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "edge", "\\3", sep=""), enzyme, perl=T)
-			E <- gsub("(.+)(edge_inner)(.+)", paste("\\1", "inner", "\\3", sep=""), enzyme, perl=T)
+			S <- gsub("(.+)(all)(.+)", paste("\\1", "edge", "\\3", sep=""), enzyme, perl=T)
+			E <- gsub("(.+)(all)(.+)", paste("\\1", "inner", "\\3", sep=""), enzyme, perl=T)
 			modG[[enzyme]] <- gatcs[[S]] + gatcs[[E]]
 		}
 gatcs <- modG
 samplesList <- modS
-rm(modS, modG)
+# rm(modS, modG)
 	}
 currentDate <- format(Sys.time(), "%d-%m-%Y")
 load.gatc.df <- paste("DF_Counts_Step_01_Raw_Counts_", currentDate, ".csv", sep="")
@@ -576,10 +574,11 @@ for (i in set){
 		Use.Bin.Size <- results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Bin.Size"]
 		AllUsefullData <- sum(DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[1]]] > 0 & DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[2]]] > 0)
 		UsefullData <- sum(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1] > 0 & DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2] > 0)
+		statCurrentItem <- data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData, Notes=paste("Used replicates: ", names(DATA.filter)[8], ", ", names(DATA.filter)[9], ".", if (length(grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T)) == 1) {paste(" And replace replicate number in ", grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T, value=T), " from 3 to 2", sep="")}, sep=""))
 		if (exists("stat.clean.df") == T) {
-			stat.clean.df <- rbind(stat.clean.df, data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData))
+			stat.clean.df <- rbind(stat.clean.df, statCurrentItem)
 		} else {
-			stat.clean.df <- data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData)
+			stat.clean.df <- statCurrentItem
 		}
 		DATA.outfilter <- cbind(DATA.outfilter, DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])
 	}
@@ -587,6 +586,12 @@ for (i in set){
 write.stat.clean.df <- file.path(outputCleanStat, "Filter_statistics_for_all_samples.csv")
 WriteIntermediateFiles(source=stat.clean.df, output.file=write.stat.clean.df)
 DATA <- DATA.outfilter
+
+samplesList <- samplesList[samplesList$id %in% names(DATA)[8:length(DATA)], ]
+samplesList$id <- sub("(.*\\.)3?$", "\\12", samplesList$id, perl=T)
+samplesList$replicate <- sub("3", "2", samplesList$replicate)
+
+names(DATA)[8:length(DATA)] <- sub("(.*\\.)3?$", "\\12", names(DATA)[8:length(DATA)], perl=T)
 
 # Combine data into one
 #######################
@@ -785,7 +790,7 @@ rm(name)
 					MainCorrelations(dataSet=DATAs.norm.ave[[name]], corrMethod=corrMethod, labelHeatmap=labelHeatmap, use.opt="pairwise.complete.obs", suffixCSV="13_On_Averaged_A", suffixPDF="13_On_Averaged", corr.on.file=dam.norm.ave, createPDF=T)
 			} else {
 				print("I found that I calculate only one protein data, because I don't run Correlation counts")
-					print(paste("Stop calculate from averaged", name, sep=" "))
+				print(paste("Stop calculate from averaged", name, sep=" "))
 			}
 	}
 
@@ -802,7 +807,7 @@ chromosomesVector <- unique(DATAs.norm.ave$DATA$chr)
 HMM.data <- list()
 DOMAIN.data <- list()
 for (listItem in 8:length(DATAs.norm.ave$DATA)) {
-	DATA.name <- sub("(.*)(_edge|_edge_inner)\\.norm\\.ave", "\\1", names(DATAs.norm.ave$DATA)[listItem])
+	DATA.name <- sub("(.*)(_edge|_all)\\.norm\\.ave", "\\1", names(DATAs.norm.ave$DATA)[listItem])
 	HMM.data[[DATA.name]] <- list()
 	print(paste("Start calculate BioHMM data from", DATA.name, sep=" "))
 	for (chr in 1:length(chromosomesVector)) {
