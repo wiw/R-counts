@@ -18,23 +18,29 @@
 ########################################################################
 	rm(list=ls())
 	library(gplots)
+	library(ggplot2)
 	library(snapCGH)
 	library(cluster)
+	library(limma)
+	library(Vennerable)
+	library(BSgenome.Dmelanogaster.UCSC.dm3)
 
 # Declare variables
 ###################
-	prefixDir <- "correction" # output directory into working directory
+	prefixDir <- "RUN22-06-2015" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
 	workDir <- getwd()	# working directory (WD)
-	sourceDir <- "/home/anton/backup/tpoutput/filter" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
+	sourceDir <- "/home/anton/backup/output/RUN22-06-2015" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
 	outputDomain <- "domains"
 	outputCleanStat <- "clean_stat"
+	outputBio <- "Bio"
+	outputHeatmap <- "Heatmap"
 	startCol <- 7	# the number of last column in GATCs file, default "7"
-	gatcFile <- paste(workDir, "GATCs.txt", sep="/")	# location you GATCs file
+	gatcFile <- paste(workDir, "GATCs_mod.txt", sep="/")	# location you GATCs file
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
 	usePseudoCounts <- F	# are you need to add pseudo counts into source data (T or F)? Default "T"
 	pseudoCounts <- c(0.01)		# the vector of pseudo counts, default "c(1)"
@@ -45,6 +51,9 @@
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
 	useSomeFiles <- c(9:16)	# the region of files which need calculate
+	tissue.bio.set <- c("Kc167", "BR", "FB", "NRN", "Glia") # Part of tissies from all
+	protein.bio.set <- c("LAM", "HP1", "PC") # Part of protein from all
+	conditions.bio.set <- c("m", "m_25mkM4HT", "mf_min")
 
 # Create folders
 ################
@@ -54,6 +63,8 @@
 	dir.create(file.path(workDir, prefixDir, outputScttr), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputGff, outputDomain), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputCleanStat), showWarnings = FALSE)
+	dir.create(file.path(workDir, prefixDir, outputHeatmap), showWarnings = FALSE)
+
 # Whether a script run earlier?
 ###############################
 setwd(file.path(workDir, prefixDir))
@@ -78,12 +89,12 @@ for (i in baseFile) {
 	clearFileName <- sub("(.*)_paired", "\\1", i, perl=T)
 	fileID <- subset(damIdDscrp, grepl(clearFileName, fastq.file))
 	} else {
-		fileID <- subset(damIdDscrp, grepl(i, fastq.file))
-		if (nrow(fileID) < 2){
+		fileID <- subset(damIdDscrp, grepl(paste(i, "\\..*", sep=""), fastq.file))
+		if (nrow(fileID) == 1){
 			fileID <- rbind(fileID, fileID)
 		}
 	}
-	if (grep(i, baseFile) == 1){
+	if (exists("damIdDscrpCut") == F){
 		damIdDscrpCut <- fileID
 	} else {
 		damIdDscrpCut <- rbind(damIdDscrpCut, fileID)
@@ -118,7 +129,10 @@ write.table(samplesList, file="rdata_description.csv", sep=";", row.names=F, col
 ################################### 
 	WriteIntermediateFiles <- function(source, output.file) {
 		if (writeTemp == T) {
-			write.table(source, file=file.path(prefixDir, output.file), sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+			if (tolower(names(source)[1]) == "id") {
+				names(source)[1] <- paste("GATC", names(source)[1], sep=".")
+			}
+			write.table(source, file=file.path(prefixDir, output.file), sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F, eol="\r\n")
 		}
 	}
 
@@ -137,19 +151,33 @@ PearsonAndSpearmanCorrelations <- function(dataSet, use.method, use.opt) {
 	rm(j)
 		invisible(corr)
 }
+PearsonAndSpearmanCorrelationsHeatmapMod <- function(dataSet1, dataSet2, use.method, use.opt) {
+	corr <- matrix(data=NA, nrow=ncol(dataSet1)-7, ncol=ncol(dataSet2)-7, byrow=T)
+		rownames(corr) <- names(dataSet1)[8:(ncol(dataSet1))]
+		colnames(corr) <- names(dataSet2)[8:(ncol(dataSet2))]
+		for (j in 1:(ncol(dataSet2)-7)){
+			for (i in 1:(ncol(dataSet1)-7)){
+				corr[i,j] <- round(cor(dataSet1[,7+i], dataSet2[,7+j], method=use.method, use=use.opt), digits=2)
+			}
+			rm(i)
+		}
+	rm(j)
+		invisible(corr)
+}
 
 # Combine samples function
 ##########################
 CombineSamples <- function(dataFrame) {
 	with(dataFrame, data.frame(DAM.1=`DAM-1.FCC4JPEACXX_L6_R1` + `DAM-1.FCC4JPEACXX_L6_R2`, DAM.2=`DAM-2.FCC4JPEACXX_L6_R1` + `DAM-2.FCC4JPEACXX_L6_R2`, LAM.1=`LAM-1.FCC4JPEACXX_L6_R1` + `LAM-1.FCC4JPEACXX_L6_R2`, LAM.2=`LAM-2.FCC4JPEACXX_L6_R1` + `LAM-2.FCC4JPEACXX_L6_R2`))
 }
+
 # Main correlations function
 ############################
 MainCorrelations <- function(dataSet, corrMethod, labelHeatmap, use.opt="everything", suffixCSV, suffixPDF, corr.on.file, createPDF=T, counts=F) {  
 	for (m in corrMethod) {
 		corr.file <- assign(paste(m, ".cor", sep=""), as.data.frame(PearsonAndSpearmanCorrelations(dataSet, m, use.opt)))
 			if (writeTemp == T) {
-				write.table(corr.file, file=file.path(prefixDir, paste("DF_Counts_Step_", suffixCSV, "_", if (counts == T) {""} else {paste(name, "_", sep="")}, m, "_", currentDate, ".csv", sep=""), sep="\t", row.names=T, col.names=T, quote=F, dec=".", append=F))
+				write.table(corr.file, file=file.path(prefixDir, paste("DF_Counts_Step_", suffixCSV, "_", if (counts == T) {""} else {paste(name, "_", sep="")}, m, "_", currentDate, ".csv", sep="")), sep=";", row.names=T, col.names=T, quote=F, dec=".", append=F, eol="\r\n")
 			}
 		corr.file <- as.matrix(corr.file)
 			if (createPDF == T){
@@ -170,6 +198,7 @@ MainCorrelations <- function(dataSet, corrMethod, labelHeatmap, use.opt="everyth
 			}
 	}
 }
+
 # ACF on data function
 ######################
 AcfOnData <- function(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data) {
@@ -212,46 +241,48 @@ AcfOnData <- function(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data) {
 # DamID to WIG&GFF function
 ###########################
 DamIdSeqToWigGff <- function(dataSet) {
-	for (step in c(1:2)) {
-		if (step == 1) {
-			tag <- ""
-				data.wg <- dataSet
-		} else {
-			tag <- ".ma"
-				data.wg <- dataSet[dataSet$presence.ma == 1, ]
-		}
+for (step in c(1:2)) {
+	if (step == 1) {
+		tag <- ""
+		data.wg <- dataSet
+	} else {
+		tag <- ".ma"
+		data.wg <- dataSet[dataSet$presence.ma == 1, ]
+	}
+
 # Calculate WIG
-		data.wg$start <- round((data.wg$start + data.wg$end)/2)
-			data.wg$start <- sprintf("%d", data.wg$start)
-			for (j in 8:(ncol(data.wg))) {
-				wig.file <- file.path(prefixDir, outputWig, paste(names(data.wg)[j], tag, "_", name, ".wig", sep=""))
-					chrs <- unique(data.wg$chr)
-					for (i in 1:length(unique(data.wg$chr))){
-						selected.chr <- data.wg[(data.wg$chr == chrs[i]), c(3, j)]
-							selected.chr <- selected.chr[!is.na(selected.chr[, 2]), ]
-							if (i == 1) {
-								write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
-							} else {
-								write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=T)
-							}
-						write.table(selected.chr, file=wig.file, sep=" ", row.names=F, col.names=F, quote=F, dec=".", append=T)
-					}
+	data.wg$start <- round((data.wg$start + data.wg$end)/2)
+	data.wg$start <- sprintf("%d", data.wg$start)
+	for (j in 8:(ncol(data.wg))) {
+		wig.file <- file.path(prefixDir, outputWig, paste(names(data.wg)[j], tag, "_", name, ".wig", sep=""))
+		chrs <- unique(data.wg$chr)
+		for (i in 1:length(unique(data.wg$chr))){
+			selected.chr <- data.wg[(data.wg$chr == chrs[i]), c(3, j)]
+			selected.chr <- selected.chr[!is.na(selected.chr[, 2]), ]
+			if (i == 1) {
+				write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+			} else {
+				write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=T)
 			}
-		rm(j, i)		
+			write.table(selected.chr, file=wig.file, sep=" ", row.names=F, col.names=F, quote=F, dec=".", append=T)
+		}
+	}
+	rm(j, i)	
+
 # Calculate GFF
-			for (j in 8:(ncol(data.wg))) {
-				selected.set <- data.wg[, c(1:7, j)];
-				selected.set <- cbind(selected.set, NA);
-				selected.set[, 2] <- paste("chr", selected.set[, 2], sep="");
-				selected.set <- selected.set[, c(2, 7, 5, 3, 4, 8, 7, 9, 1)];
-				selected.set[, 2] <- ".";
-				selected.set[, 3] <- paste(names(data.wg)[j], tag, sep="");
-				selected.set[, 7] <- ".";
-				selected.set[, 8] <- ".";
-				selected.set <- selected.set[!is.na(selected.set[, 6]), ];
-				gff.file <- file.path(prefixDir, outputGff, paste(names(data.wg)[j], tag, "_", name, ".gff", sep=""))
-					write.table(selected.set, file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F);
-			}
+		for (j in 8:(ncol(data.wg))) {
+			selected.set <- data.wg[, c(1:7, j)];
+			selected.set <- cbind(selected.set, NA);
+			selected.set[, 2] <- paste("chr", selected.set[, 2], sep="");
+			selected.set <- selected.set[, c(2, 7, 5, 3, 4, 8, 7, 9, 1)];
+			selected.set[, 2] <- ".";
+			selected.set[, 3] <- paste(names(data.wg)[j], tag, sep="");
+			selected.set[, 7] <- ".";
+			selected.set[, 8] <- ".";
+			selected.set <- selected.set[!is.na(selected.set[, 6]), ];
+			gff.file <- file.path(prefixDir, outputGff, paste(names(data.wg)[j], tag, "_", name, ".gff", sep=""))
+				write.table(selected.set, file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F);
+		}
 		rm(j)
 	}
 }
@@ -289,7 +320,8 @@ ScatterPlotting3D <- function(dataSet, tag) {
 					if (x != i) {
 						Cor.P <- round(cor(dataSet[[i]], dataSet[[x]], method="pearson", use="pairwise.complete.obs"), digits=2)
 						Cor.S <- round(cor(dataSet[[i]], dataSet[[x]], method="spearman", use="pairwise.complete.obs"), digits=2)
-						plot(x=dataSet[[i]], y=dataSet[[x]], cex=0.3, xlab=i, ylab=x, text(x=min(dataSet[[i]], na.rm=T) + 1.5, y=max(dataSet[[i]], na.rm=T) - 1.5, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+						plot(x=dataSet[[i]], y=dataSet[[x]], cex=0.3, xlab=i, ylab=x, text(x=min(dataSet[[i]], na.rm=T) + 1.5, y=max(dataSet[[i]], na.rm=T)*0.75, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+						# print(ggplot(dataSet, aes(dataSet[[i]], dataSet[[x]]))+geom_point(alpha=1/10, colour="red", size=4) + xlab(i) + ylab(x) + geom_text(data = data.frame(), size = 4, hjust=0, aes(min(dataSet[, i], na.rm=T), max(dataSet[, x], na.rm=T)*0.75, label =c(paste("Pearson.Cor = ", Cor.P, "\n\n", sep=""), paste("Spearman.Cor = ", Cor.S, sep="")))) + theme_bw())
 						rm(Cor.P)
 						rm(Cor.S)
 					}
@@ -430,6 +462,92 @@ CalculateCoordinate <- function(x, y){
     Result[y,1]
   }
 }
+
+# Make Venn diagram
+###################
+pcentFun <- function(x,y) {
+100 * (x / y)
+}
+MakeVennDiagram <- function(x, set, v1, v2) {
+compare.by.venn.df <- x[, grep(set, names(x)[8:ncol(x)], perl=T, value=T)]
+compare.by.venn.df <- compare.by.venn.df[complete.cases(compare.by.venn.df), ]
+category <- names(compare.by.venn.df)
+venn.matrix <- vennCounts(compare.by.venn.df)
+areas <- venn.matrix[,ncol(venn.matrix)]
+names(areas) <- apply(venn.matrix[, c(1:(ncol(venn.matrix)-1))], 1, paste, collapse="")
+areasPcent <- round(pcentFun(areas, sum(areas)), digits=2)
+VennSet <- Venn(SetNames = category, Weight = areas)
+VennList <- compute.Venn(VennSet, doWeights = TRUE)
+VennList_pc <- VennList
+for (i in c(1:length(areasPcent))) {
+	position <- grep(names(areasPcent)[i], VennList_pc@FaceLabels$Signature)
+	VennList_pc@FaceLabels$Signature[position] <- paste(areasPcent[i], "%", sep="")
+}
+gp <- VennThemes(VennList)
+for (i in names(gp$FaceText)) gp$FaceText[[i]]$fontsize <- 12
+for (i in names(gp$SetText)) gp$SetText[[i]]$fontsize <- 15
+pdf(file=file.path(prefixDir, outputBio, paste("Venn Diagram between ", v2, " from ", v1, ".pdf", sep="")), width=8, height=12.76)
+par(mfrow=c(1, 2))
+par(mai=c(0.7, 0.7, 0.7, 0.5))
+if (ncol(venn.matrix) > 4) {
+	rowNumberMakevp <<- 1
+	plot(VennList)
+	rowNumberMakevp <<- 2
+	plot(VennList_pc, show = list(FaceText = c("signature"), DarkMatter = TRUE))
+	} else {
+		rowNumberMakevp <<- 1
+		plot(VennList, gpList=gp)
+		rowNumberMakevp <<- 2
+		plot(VennList_pc, gpList=gp, show = list(FaceText = c("signature"), DarkMatter = TRUE))
+	}
+dev.off()
+}
+
+# Generate heatmap from custom selection
+########################################
+MakeHeatmapToPdf <- function(input, item1, item2, vs_name, method) {
+	input <- as.matrix(input)
+	options(warn=-1)
+	pdf(file=file.path(prefixDir, outputHeatmap, paste("Heatmap_", item1, "_vs_", item2, "_on_", paste(vs_name, collapse="_"), "_", method, "_", currentDate, ".pdf", sep="")), width=14, height=14)
+	heatmap.2(x=input, col=heatmapColors, breaks=seq(from=-1, to=1, by=0.01), Rowv=T, Colv=T, dendrogram="both", trace="none", cellnote=input, notecol="white", notecex = 1.5, margins=c(7,7), main=paste(method, "'s correlation coefficients and hierarchical clustering on\n", "'", paste(vs_name, collapse=", "), "'", sep=""), cex.lab=1.1, cexRow=0.8, srtRow=90, cexCol=0.8, srtCol=0, lmat=matrix(c(4,2,3,1), ncol=2), lwid=c(0.1, 0.9), lhei=c(0.15, 0.85), key=T, density.info="none")
+	options(warn=0)
+	dev.off()
+}
+HeatmapBySelection <- function(dataSet, corrMethod, use.opt) {  
+	for (m in corrMethod) {
+		log <- list()
+		bio.set <- list(TB = tissue.bio.set, PB = protein.bio.set)
+		for (element.set in bio.set) {
+			for (tHa in element.set) {
+				for (tHb in element.set) {
+					if (length(element.set) == length(bio.set$TB)) {
+						selection.filename <- bio.set$PB
+					} else {
+						selection.filename <- bio.set$TB
+					}
+					if (tHa == tHb) {
+						log[[tHa]] <- tHa
+						ds.selection <- cbind(dataSet[, c(1:7)], dataSet[,grep(paste(tHa, "\\..*",sep=""), names(dataSet), perl=T, value=T)])
+						corr.file <- assign(paste(m, ".cor", sep=""), as.data.frame(PearsonAndSpearmanCorrelations(ds.selection, m, use.opt)))
+						MakeHeatmapToPdf(input=corr.file, item1=tHa, item2=tHb, vs_name=selection.filename, method=m)
+					} else {
+						tgh <- assign(name, paste(tHa, tHb, sep="_"))
+						log[[tgh]] <- paste(tHa, tHb, sep="_")
+						if (length(grep(paste("(",tHa,"_",tHb,")|(",tHb,"_",tHa,")",sep=""), log, perl=T)) < 2) {
+							ds.selection1 <- cbind(dataSet[, c(1:7)], dataSet[,grep(paste(tHa, "\\..*",sep=""), names(dataSet), perl=T, value=T)])
+							ds.selection2 <- cbind(dataSet[, c(1:7)], dataSet[,grep(paste(tHb, "\\..*",sep=""), names(dataSet), perl=T, value=T)])
+							corr.file <- assign(paste(m, ".cor", sep=""), as.data.frame(PearsonAndSpearmanCorrelationsHeatmapMod(ds.selection1, ds.selection2, m, use.opt)))
+							MakeHeatmapToPdf(input=corr.file, item1=tHa, item2=tHb, vs_name=selection.filename, method=m)
+						} else {
+							log[[tgh]] <- NULL
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 #######################################
 ################# END #################
 #######################################
@@ -491,11 +609,14 @@ WriteIntermediateFiles(source=DATA, output.file=use.chr.only)
 
 # Filter DATA
 #############
+print("Start filtering data")
 set <- unique(sub("(.*)\\.([0-9]?)$", "\\1", names(DATA)[8:length(DATA)], perl=T))
 DATA.outfilter <- DATA[, 1:7]
 for (i in set){
 	protein.set <- grep(i, names(DATA))
+	print(paste("Filter data from", i, sep=" "))
 	if (length(protein.set) == 1) {
+		print(paste("You have one replicate from ", i, ". Skipped!", sep=""))
 		DATA.outfilter[[grep(i, names(DATA), value=T)]] <- DATA[, protein.set]
 	}
 	if (length(protein.set) >= 2) {
@@ -536,10 +657,19 @@ for (i in set){
 		results.df <- as.data.frame(matrix(nrow=0, ncol=3))
 	
 		DATA.list.out <- list()
+		bmp(filename=file.path(prefixDir, outputCleanStat, paste("Correlations_between_", names(DATA.filter)[8], "_and_", names(DATA.filter)[9], ".bmp", sep="")), width=1600, height=800, units = "px")
+		par(mfrow=c(1, 2))
+		par(mai=c(1.5, 1.5, 0.5, 0.5))
+		par(cex=1.3)
 		for (bin.size in c(0, 100, 200, 500, seq(1000, 10000, 1000), 15000, seq(20000, 50000, 10000), sum(!is.na(DATA.filter$Rep.Slope.X)))) {
 			if (bin.size == 0) {
 				Pearson.Cor <- cor(DATA.filter[, 8], DATA.filter[, 9], method="pearson", use="pairwise.complete.obs")
-				results.df <- rbind(results.df, data.frame("Bin.Size"=bin.size, "Number.of.Removed.GATCs"=0, "Pearson.Cor"=Pearson.Cor))
+				Spearman.Cor <- cor(DATA.filter[, 8], DATA.filter[, 9], method="spearman", use="pairwise.complete.obs")
+				RemovedGATCs <- nrow(DATA[DATA[,protein.set[1]] == 0 | DATA[,protein.set[2]] == 0, ])
+				LeftGATCs <- nrow(DATA) - RemovedGATCs
+				results.df <- rbind(results.df, data.frame("Bin.Size"=bin.size, "Number.of.Removed.GATCs"=RemovedGATCs, "Pearson.Cor"=Pearson.Cor, "Number.of.left.GATCs"=LeftGATCs))
+				plot(x=DATA.filter[, 8], y=DATA.filter[, 9], cex=0.3, xlab=names(DATA.filter)[8], ylab=names(DATA.filter)[9], las=1, bty="l", pch=".", text(x=min(DATA.filter[, 8], na.rm=T), y=max(DATA.filter[, 9], na.rm=T)*0.75, adj=0, main="Original correlation" , labels=c(paste("pearson = ", round(Pearson.Cor, digits=2), "\n\n", sep=""), paste("spearman = ", round(Spearman.Cor, digits=2), sep=""))))
+
 			} else {
 				number.of.bins <- ceiling(sum(!is.na(DATA.filter$Rep.Slope.X))/bin.size)
 				for (item in 1:number.of.bins) {
@@ -562,7 +692,8 @@ for (i in set){
 				DATA.merged$note[(!is.na(DATA.merged[, 8] + DATA.merged[, 9]) + !is.na(DATA.merged[, 10] + DATA.merged[, 11])) == 1] <- "filtered"
 				RemovedGATCs <- sum(DATA.merged$note == "filtered")
 				Pearson.Cor <- cor(DATA.merged[, 10], DATA.merged[, 11], method="pearson", use="pairwise.complete.obs")
-				results.df <- rbind(results.df, data.frame(Bin.Size=bin.size, Number.of.Removed.GATCs=RemovedGATCs, Pearson.Cor=Pearson.Cor))
+				LeftGATCs <- nrow(DATA) - RemovedGATCs
+				results.df <- rbind(results.df, data.frame("Bin.Size"=bin.size, "Number.of.Removed.GATCs"=RemovedGATCs, "Pearson.Cor"=Pearson.Cor, "Number.of.left.GATCs"=LeftGATCs))
 				for (name in 10:11) DATA.merged[is.na(DATA.merged[, name]), name] <- 0
 				DATA.list.out[[paste("bins", bin.size, sep="_")]] <- DATA.merged[, 10:11]
 				names(DATA.list.out[[paste("bins", bin.size, sep="_")]]) <- sub("(.*)\\.filt", "\\1", names(DATA.list.out[[paste("bins_", bin.size, sep="")]]), perl=T)
@@ -571,10 +702,12 @@ for (i in set){
 			}
 		}
 		results.df.part <- results.df[results.df$Pearson.Cor > (max(results.df$Pearson.Cor) - 0.1*sd(results.df$Pearson.Cor)),]
-		Use.Bin.Size <- results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Bin.Size"]
+		Use.Bin.Size <- results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Bin.Size"][1]
 		AllUsefullData <- sum(DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[1]]] > 0 & DATA[[names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[2]]] > 0)
 		UsefullData <- sum(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1] > 0 & DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2] > 0)
-		statCurrentItem <- data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData, Notes=paste("Used replicates: ", names(DATA.filter)[8], ", ", names(DATA.filter)[9], ".", if (length(grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T)) == 1) {paste(" And replace replicate number in ", grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T, value=T), " from 3 to 2", sep="")}, sep=""))
+		statCurrentItem <- data.frame(Sample=i, Original.Correlation=results.df[1, "Pearson.Cor"], Correlation=results.df.part[results.df.part$Number.of.Removed.GATCs == min(results.df.part$Number.of.Removed.GATCs), "Pearson.Cor"], Bin.Size=Use.Bin.Size, Original.NonZero.Value=AllUsefullData, Cleaned.NonZero.Value=UsefullData, Differences=AllUsefullData-UsefullData, Notes=paste("Used replicates: ", names(DATA.filter)[8], ", ", names(DATA.filter)[9], ".", if (length(grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T)) != 0) {paste(" And replace replicate number in ", grep("(.*\\.)3?$", names(DATA.filter)[8:9], perl=T, value=T), " from 3 to 2", sep="")}, sep=""))
+		plot(x=DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1], y=DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2], cex=0.3, xlab=names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[1], ylab=names(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])[2], las=1, bty="l", pch=".", main=paste("Correlation with bin size", Use.Bin.Size, sep=" "), text(x=min(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1], na.rm=T), y=max(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2], na.rm=T)*0.75, adj=0, labels=c(paste("pearson = ", round(results.df.part[results.df.part$Bin.Size == Use.Bin.Size, "Pearson.Cor"], digits=2), "\n\n", sep=""), paste("spearman = ", round(cor(DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 1], DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]][, 2], method="spearman", use="pairwise.complete.obs"), digits=2), sep=""))))
+		dev.off()
 		if (exists("stat.clean.df") == T) {
 			stat.clean.df <- rbind(stat.clean.df, statCurrentItem)
 		} else {
@@ -583,16 +716,17 @@ for (i in set){
 		DATA.outfilter <- cbind(DATA.outfilter, DATA.list.out[[paste("bins", Use.Bin.Size, sep="_")]])
 	}
 }
+print("End all filtering data")
 write.stat.clean.df <- file.path(outputCleanStat, "Filter_statistics_for_all_samples.csv")
 WriteIntermediateFiles(source=stat.clean.df, output.file=write.stat.clean.df)
 DATA <- DATA.outfilter
 
 samplesList <- samplesList[samplesList$id %in% names(DATA)[8:length(DATA)], ]
+if (length(grep("(.*\\.)3?$", samplesList$id, perl=T)) != 0){
 samplesList$id <- sub("(.*\\.)3?$", "\\12", samplesList$id, perl=T)
 samplesList$replicate <- sub("3", "2", samplesList$replicate)
-
 names(DATA)[8:length(DATA)] <- sub("(.*\\.)3?$", "\\12", names(DATA)[8:length(DATA)], perl=T)
-
+}
 # Combine data into one
 #######################
 	if (needCombine == T) {
@@ -734,7 +868,6 @@ rm(name)
 #################################
 # Run many functions from Step_10
 #################################
-
 	for (name in names(DATAs.norm)) {
 		print(paste("Start calculate from", name, sep=" "))
 # Correlation on Normalized data
@@ -799,9 +932,6 @@ rm(name)
 ###############################
 
 # By sample use only DATA, without pseudo counts
-listVar <- ls()
-listVar <- listVar[-which(listVar %in% c("DATAs.norm.ave", "outputGff", "workDir", "prefixDir", "fit.model", "FeatureCalls.to.GFF.like", "runBioHMM", "outputDomain"))]
-rm(list=listVar, listVar)
 
 chromosomesVector <- unique(DATAs.norm.ave$DATA$chr)
 HMM.data <- list()
@@ -826,33 +956,33 @@ for (listItem in 8:length(DATAs.norm.ave$DATA)) {
  		if (nrow(classifier) == 2){
 			# notify if there is a problem with groupping the BioHMM outputs ("1s" and "2s") 
 			if (classifier$Group.1[1] !=1){
-				print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 1!"), sep="")
+				# print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 1!"), sep="")
 			}
 			if (classifier$Group.1[2] !=2){
-				print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 2!"), sep="")
+				# print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 2!"), sep="")
 			}
 			 
 			# if "1s" are targets and "2s" are non-targets
 			if ((classifier$x[1] > 0) & (classifier$x[2] < 0)) {
-			print(paste(DATA.name, ", ", dataframe.name, " - '1s' are targets and '2s' are non-targets", sep=""))
+			# print(paste(DATA.name, ", ", dataframe.name, " - '1s' are targets and '2s' are non-targets", sep=""))
 			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 1
 			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 0
 			}
 			# if "1s" are non-targets and "2s" are targets
 			if ((classifier$x[1] < 0) & (classifier$x[2] > 0)) {
-			print(paste(DATA.name, ", ", dataframe.name, " - '1s' are non-targets and '2s' are targets", sep=""))
+			# print(paste(DATA.name, ", ", dataframe.name, " - '1s' are non-targets and '2s' are targets", sep=""))
 			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 1
 			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 0
 			}
 
 			# if it is not clear what is what
 			if ((classifier$x[1] < 0) & (classifier$x[2] < 0)) {
-				print(paste(DATA.name, ", ", dataframe.name, " - all data less then zero!", sep=""))
+				# print(paste(DATA.name, ", ", dataframe.name, " - all data less then zero!", sep=""))
 			}
 
 			# if it is not clear what is what
 			if ((classifier$x[1] > 0) & (classifier$x[2] > 0)) {
-				print(paste(DATA.name, ", ", dataframe.name, " - all data more then zero!", sep=""))
+				# print(paste(DATA.name, ", ", dataframe.name, " - all data more then zero!", sep=""))
 			}
 		} else {
 			print(paste(DATA.name, ", ", dataframe.name, " - not enough data!", sep=""))
@@ -878,4 +1008,64 @@ for (listItem in 8:length(DATAs.norm.ave$DATA)) {
 }
 print("Congratulations!!!")
 
+print("Search Biology meaning...")
+# Heatmap Correlation
+kc.list <- list.files("/home/anton/backup/input/KC", full.names=T)
+DATA.venn <- DATAs.norm.ave$DATA[, c(1:7)]
+DATA.kc <- as.data.frame(matrix(NA, ncol=0, nrow=nrow(DATAs.norm.ave$DATA)))
+for (i in kc.list) {
+	kc <- read.delim(i, header=T, sep="\t", skip=17, stringsAsFactors=F)
+	compare.vector <- match(DATA.venn[,1], kc[,1])
+	kc.fullname <- sub("([a-zA-Z0-9]*)-([a-zA-Z0-9]*)_xx.*", paste("\\1", "\\2", "std_all.norm.ave", sep="."), basename(i), perl=T)
+	DATA.kc[[kc.fullname]] <- kc$score[compare.vector]
+	for (x in c("score", "bound")) {
+	kc.name <- sub("([a-zA-Z0-9]*)-([a-zA-Z0-9]*)_xx.*", paste("\\1", "\\2", x, sep="."), basename(i), perl=T)
+	DATA.venn[[kc.name]] <- kc[[x]][compare.vector]
+	}
+}
+DATA.middle.part <- cbind(DATAs.norm.ave$DATA[,c(1:7)], DATAs.norm.ave$DATA[,grep(paste("(", paste(tissue.bio.set, collapse="|"), ")\\.(", paste(protein.bio.set, collapse="|"), ")\\.(", paste(conditions.bio.set, collapse="|"), ")_(edge|all).*", sep="") ,names(DATAs.norm.ave$DATA), perl=T, value=T)])
 
+DATA.part <- cbind(DATA.middle.part, DATA.kc)
+print("Run heatmap generate. Many NULL message!")
+HeatmapBySelection(dataSet=DATA.part, corrMethod=corrMethod, use.opt="pairwise.complete.obs")
+
+# Generate Venn Diagram
+for (i in names(DATA.middle.part)[8:ncol(DATA.middle.part)]) {
+	name <- sub("(.*)_(all|edge).*", "\\1", i, perl=T)
+	name.score <- paste(name, "score", sep=".")
+	name.bound <- paste(name, "bound", sep=".")
+	DATA.venn[[name.score]] <- DATA.middle.part[[i]]
+	for (x in names(HMM.data[[name]])) {
+		if ("target" %in% names(HMM.data[[name]][[x]])){
+			if (exists("target.df") == F) {
+				target.df <- HMM.data[[name]][[x]][, c("ID", "target")]
+			} else {
+				target.df <- rbind(target.df, HMM.data[[name]][[x]][, c("ID", "target")])
+			}
+		}
+	}
+	compare.vector <- match(DATA.venn$GATC.ID, target.df$ID)
+	DATA.venn[[name.bound]] <- target.df$target[compare.vector]
+	rm(target.df)
+}
+print("Make Venn Diagram")
+for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
+for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*\\.(LAM|HP1).*bound", sep=""), v1=t.s, v2="LAM, HP1")
+for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste(".*\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB, NRN, Glia")
+for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste("(Kc167|BR|FB)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB")
+
+# Count area domain from whole genome
+#####################################
+domainSizeReport <- as.data.frame(matrix(NA, nrow=0, ncol=5))
+names(domainSizeReport) <- c("Item.name", "Genome.size", "Domain.size", "Ratio", "Selected.chromosomes")
+for (item in names(DOMAIN.data)) {
+	getChrList <- paste("chr", unique(DOMAIN.data[[item]][,1]), sep="")
+	domainsSize <- sum(DOMAIN.data[[item]]$end-DOMAIN.data[[item]]$start)
+	chr.lengths <- integer()
+	for (i in getChrList) chr.lengths <- append(chr.lengths, length(DNAString(Dmelanogaster[[i]])))
+	AllGenome <- sum(chr.lengths)
+	partOfDomainFromGenome <- paste(round(pcentFun(domainsSize, AllGenome), digits=3), "%", sep="")
+	domainSizeReport[grep(item, names(DOMAIN.data)),] <- c(item, AllGenome, domainsSize, partOfDomainFromGenome, paste(unique(DOMAIN.data[[item]][,1]), collapse=", "))
+}
+reportFile <- file.path(prefixDir, outputBio, "Report_about_domains_part_from_genome_D.melanogaster.csv")
+write.table(domainSizeReport, file=reportFile, sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
