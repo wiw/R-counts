@@ -24,14 +24,23 @@
 	library(limma)
 	library(Vennerable)
 	library(BSgenome.Dmelanogaster.UCSC.dm3)
+	library(DESeq)
+	library(Ringo)
+	library(tools)
+	library(plyr)
+
+	# libraries_string <- c("gplots", "ggplot2", "snapCGH", "cluster", "limma", "Vennerable", "BSgenome.Dmelanogaster.UCSC.dm3", "DESeq", "Ringo", "tools", "plyr")
+	# library(libraries_string, character.only=T)
 
 # Declare variables
 ###################
-	prefixDir <- "RUN22-06-2015" # output directory into working directory
+	prefixDir <- "RUN11-09-2015_ludo" # output directory into working directory
 	onlyEdge <- F # use only edge reads to counts or not
-	workDir <- getwd()	# working directory (WD)
-	sourceDir <- "/home/anton/backup/output/RUN22-06-2015" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
+	workDir <- "/home/anton/data/R-script/R-counts"	# working directory (WD)
+	sourceDir <- "/home/anton/backup/ludo-output" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
+	genesFilePath <- "/home/anton/backup/2013-07-09_Assigning_GATCs_to_Genes_(FBgn_IDs)/Drosophila_melanogaster.BDGP5.25.64_Genes_AP130708.txt"
+	exprDataDir <- "/home/anton/backup/input/ExpressionData"
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
 	outputScttr <- "scatter_plots"	# output folder for scatter plots in WD
@@ -39,8 +48,11 @@
 	outputCleanStat <- "clean_stat"
 	outputBio <- "Bio"
 	outputHeatmap <- "Heatmap"
+	outputBioBoxplot <- "Boxplot"
+	outputExpr <- "Expression"
 	startCol <- 7	# the number of last column in GATCs file, default "7"
 	gatcFile <- paste(workDir, "GATCs_mod.txt", sep="/")	# location you GATCs file
+	gatcFile4Genes <- paste(workDir, "GATCs.txt", sep="/")
 	needCombine <- F	# are you need to combine some columns into one (T or F)? we recommend set the "F"; if you select "T" - edit the "combine" vector on string #85 into this code
 	usePseudoCounts <- F	# are you need to add pseudo counts into source data (T or F)? Default "T"
 	pseudoCounts <- c(0.01)		# the vector of pseudo counts, default "c(1)"
@@ -51,9 +63,13 @@
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
 	useSomeFiles <- c(9:16)	# the region of files which need calculate
-	tissue.bio.set <- c("Kc167", "BR", "FB", "NRN", "Glia") # Part of tissies from all
+	tissue.bio.set <- c("BR", "FB", "Glia", "NRN", "Kc167") # Part of tissies from all
 	protein.bio.set <- c("LAM", "HP1", "PC") # Part of protein from all
-	conditions.bio.set <- c("m", "m_25mkM4HT", "mf_min")
+	conditions.bio.set <- c("m", "m_25mkM4HT", "mf_min", "std")
+	tissueExprSet <- c("BR", "FB", "Glia", "NRN", "Kc167")
+	tissueIntersectSet <- c("BR", "FB", "Glia", "NRN", "Kc167")
+	proteinIntersectSet <- c("LAM", "HP1", "PC")
+
 
 # Create folders
 ################
@@ -64,6 +80,9 @@
 	dir.create(file.path(workDir, prefixDir, outputGff, outputDomain), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputCleanStat), showWarnings = FALSE)
 	dir.create(file.path(workDir, prefixDir, outputHeatmap), showWarnings = FALSE)
+	dir.create(file.path(workDir, prefixDir, outputBio), showWarnings = FALSE)
+	dir.create(file.path(workDir, prefixDir, outputBio, outputBioBoxplot), showWarnings = FALSE)
+
 
 # Whether a script run earlier?
 ###############################
@@ -81,48 +100,58 @@ setwd(workDir)
 # Make samples list file
 ##########################
 MakeSamplesListFile <- function(SOURCE, DAMID) {
-filePath <- list.files(path=SOURCE, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
-baseFile <- unique(sub("(.*)_(edge|inner).*", "\\1", basename(filePath), perl=T))
-damIdDscrp <- read.delim(DAMID, header=T, sep="\t", stringsAsFactors=F)
-for (i in baseFile) {
-	if (length(grep("paired", i)) != 0){
-	clearFileName <- sub("(.*)_paired", "\\1", i, perl=T)
-	fileID <- subset(damIdDscrp, grepl(clearFileName, fastq.file))
+	filePath <- list.files(path=SOURCE, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
+	if (all(grepl("(edge|inner)", basename(filePath), perl=T))) {
+	baseFile <- unique(sub("(.*)_(edge|inner).*", "\\1", basename(filePath), perl=T))
+	ludoLabel <<- F
 	} else {
-		fileID <- subset(damIdDscrp, grepl(paste(i, "\\..*", sep=""), fastq.file))
-		if (nrow(fileID) == 1){
-			fileID <- rbind(fileID, fileID)
+		baseFile <- unique(sub("(.*)_local_GATCcounts.RData", "\\1", basename(filePath), perl=T))
+		ludoLabel <<- T
+	}
+	damIdDscrp <- read.delim(DAMID, header=T, sep="\t", stringsAsFactors=F)
+	for (i in baseFile) {
+		if (length(grep("paired", i)) != 0){
+		clearFileName <- sub("(.*)_paired", "\\1", i, perl=T)
+		fileID <- subset(damIdDscrp, grepl(clearFileName, fastq.file))
+		} else {
+			fileID <- subset(damIdDscrp, grepl(paste(i, "\\..*", sep=""), fastq.file))
+			if (nrow(fileID) == 1 & ludoLabel == F){
+				fileID <- rbind(fileID, fileID)
+			}
+		}
+		if (exists("damIdDscrpCut") == F){
+			damIdDscrpCut <- fileID
+		} else {
+			damIdDscrpCut <- rbind(damIdDscrpCut, fileID)
 		}
 	}
-	if (exists("damIdDscrpCut") == F){
-		damIdDscrpCut <- fileID
-	} else {
-		damIdDscrpCut <- rbind(damIdDscrpCut, fileID)
+	rm(fileID, i)
+	samplesList <<- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
+	names(samplesList) <<- c("id", "tissue", "protein", "conditions", "replicate", "path")
+	samplesList$path <<- filePath
+	for (colnumber in c(1:5)){
+		for (i in c(1:nrow(samplesList))){
+			if (ludoLabel == F) {
+				ins <- sub("([0-9_.a-zA-Z-]+)(_edge|_inner)(.*)", "\\2", basename(samplesList[i, 6]), perl=T)
+			} else {
+				ins <- character()
+			}
+			if (colnumber == 1){
+			subst <- paste("\\1\\.\\2\\.\\3", ins, "\\.\\4", sep="")
+			} else if (colnumber %in% c(2,3,5)){
+			subst <- paste("\\", colnumber - 1, sep="")
+			} else {
+			subst <- paste("\\3", ins, sep="")
+			}
+			if (length(grep("paired", samplesList[i, 6])) != 0){
+				samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9]+)_(?:R|F)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
+			} else {
+			samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE) 
+			}
+			}
 	}
-}
-rm(fileID, i)
-samplesList <<- as.data.frame(matrix(data=NA, nrow=length(filePath), ncol=6, dimnames=NULL))
-names(samplesList) <<- c("id", "tissue", "protein", "conditions", "replicate", "path")
-samplesList$path <<- filePath
-for (colnumber in c(1:5)){
-	for (i in c(1:nrow(samplesList))){
-		ins <- sub("([0-9_.a-zA-Z-]+)_(edge|inner)(.*)", "\\2", basename(samplesList[i, 6]), perl=T)
-		if (colnumber == 1){
-		subst <- paste("\\1\\.\\2\\.\\3_", ins, "\\.\\4", sep="")
-		} else if (colnumber %in% c(2,3,5)){
-		subst <- paste("\\", colnumber - 1, sep="")
-		} else {
-		subst <- paste("\\3_", ins, sep="")
-		}
-		if (length(grep("paired", samplesList[i, 6])) != 0){
-			samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9]+)_(?:R|F)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
-		} else {
-		samplesList[i, colnumber] <<- sub("^([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z0-9_]+)\\.([0-9]+)", subst, damIdDscrpCut[i, 1], perl=TRUE)
-		}
-		}
-}
-rm(i, colnumber, ins, subst, damIdDscrpCut)
-write.table(samplesList, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+	rm(i, colnumber, ins, subst, damIdDscrpCut)
+	write.table(samplesList, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
 }
 
 # Write intermediate files function
@@ -241,50 +270,50 @@ AcfOnData <- function(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data) {
 # DamID to WIG&GFF function
 ###########################
 DamIdSeqToWigGff <- function(dataSet) {
-for (step in c(1:2)) {
-	if (step == 1) {
-		tag <- ""
-		data.wg <- dataSet
-	} else {
-		tag <- ".ma"
-		data.wg <- dataSet[dataSet$presence.ma == 1, ]
-	}
-
-# Calculate WIG
-	data.wg$start <- round((data.wg$start + data.wg$end)/2)
-	data.wg$start <- sprintf("%d", data.wg$start)
-	for (j in 8:(ncol(data.wg))) {
-		wig.file <- file.path(prefixDir, outputWig, paste(names(data.wg)[j], tag, "_", name, ".wig", sep=""))
-		chrs <- unique(data.wg$chr)
-		for (i in 1:length(unique(data.wg$chr))){
-			selected.chr <- data.wg[(data.wg$chr == chrs[i]), c(3, j)]
-			selected.chr <- selected.chr[!is.na(selected.chr[, 2]), ]
-			if (i == 1) {
-				write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
-			} else {
-				write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=T)
-			}
-			write.table(selected.chr, file=wig.file, sep=" ", row.names=F, col.names=F, quote=F, dec=".", append=T)
+	for (step in c(1:2)) {
+		if (step == 1) {
+			tag <- ""
+			data.wg <- dataSet
+		} else {
+			tag <- ".ma"
+			data.wg <- dataSet[dataSet$presence.ma == 1, ]
 		}
-	}
-	rm(j, i)	
 
-# Calculate GFF
+	# Calculate WIG
+		data.wg$start <- round((data.wg$start + data.wg$end)/2)
+		data.wg$start <- sprintf("%d", data.wg$start)
 		for (j in 8:(ncol(data.wg))) {
-			selected.set <- data.wg[, c(1:7, j)];
-			selected.set <- cbind(selected.set, NA);
-			selected.set[, 2] <- paste("chr", selected.set[, 2], sep="");
-			selected.set <- selected.set[, c(2, 7, 5, 3, 4, 8, 7, 9, 1)];
-			selected.set[, 2] <- ".";
-			selected.set[, 3] <- paste(names(data.wg)[j], tag, sep="");
-			selected.set[, 7] <- ".";
-			selected.set[, 8] <- ".";
-			selected.set <- selected.set[!is.na(selected.set[, 6]), ];
-			gff.file <- file.path(prefixDir, outputGff, paste(names(data.wg)[j], tag, "_", name, ".gff", sep=""))
-				write.table(selected.set, file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F);
+			wig.file <- file.path(prefixDir, outputWig, paste(names(data.wg)[j], tag, "_", name, ".wig", sep=""))
+			chrs <- unique(data.wg$chr)
+			for (i in 1:length(unique(data.wg$chr))){
+				selected.chr <- data.wg[(data.wg$chr == chrs[i]), c(3, j)]
+				selected.chr <- selected.chr[!is.na(selected.chr[, 2]), ]
+				if (i == 1) {
+					write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+				} else {
+					write.table(paste("variableStep chrom=", chrs[i], sep=""), file=wig.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=T)
+				}
+				write.table(selected.chr, file=wig.file, sep=" ", row.names=F, col.names=F, quote=F, dec=".", append=T)
+			}
 		}
-		rm(j)
-	}
+		rm(j, i)	
+
+	# Calculate GFF
+			for (j in 8:(ncol(data.wg))) {
+				selected.set <- data.wg[, c(1:7, j)];
+				selected.set <- cbind(selected.set, NA);
+				selected.set[, 2] <- paste("chr", selected.set[, 2], sep="");
+				selected.set <- selected.set[, c(2, 7, 5, 3, 4, 8, 7, 9, 1)];
+				selected.set[, 2] <- ".";
+				selected.set[, 3] <- paste(names(data.wg)[j], tag, sep="");
+				selected.set[, 7] <- ".";
+				selected.set[, 8] <- ".";
+				selected.set <- selected.set[!is.na(selected.set[, 6]), ];
+				gff.file <- file.path(prefixDir, outputGff, paste(names(data.wg)[j], tag, "_", name, ".gff", sep=""))
+					write.table(selected.set, file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F);
+			}
+			rm(j)
+		}
 }
 
 # Scatter Plots on Averaged data function
@@ -366,74 +395,62 @@ runBioHMM <- function (mval, datainfo, useCloneDists = TRUE, criteria = "AIC", d
 	}
 }
 
-# Use fit model function
-########################
+# Use fit third-clustering model function 
+#########################################
 fit.model <- function (obs, datainfo = NULL, useCloneDists = TRUE, aic = TRUE, bic = FALSE, delta = 1, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
-    kb <- datainfo$start
+    kb <- datainfo$start 
     if (useCloneDists) {
-        dists.pre = kb[2:length(kb)] - kb[1:(length(kb) - 1)]
-        dists = dists.pre/(max(dists.pre))
+        dists.pre = kb[2:length(kb)] - kb[1:(length(kb) - 1)] 
+        dists = dists.pre/(max(dists.pre)) 
     } else {
         dists <- rep(1, length(kb))
     }
-    covars <- as.matrix(dists)
-    obs.ord <- obs[order(kb)]
-    kb.ord <- kb[order(kb)]
-    ind.nonna <- which(!is.na(obs.ord))
-    data <- obs.ord[ind.nonna]
-    kb <- kb.ord[ind.nonna]
-    numobs <- length(data)
-    if (numobs > 5) {
-        temp2 <- clara(data, 2)
-        init.mean.two <- temp2$medoids
-        init.var.two <- vector()
+    covars <- as.matrix(dists) 
+    obs.ord <- obs[order(kb)] 
+    kb.ord <- kb[order(kb)] 
+    ind.nonna <- which(!is.na(obs.ord)) 
+    data <- obs.ord[ind.nonna] 
+    kb <- kb.ord[ind.nonna] 
+    numobs <- length(data) 
+    if (numobs > 5) { 
+        temp3 <- clara(data, 3)
+        init.mean.three <- vector(length = 3)
+        init.mean.three <- temp3$medoids
+        init.var.three <- vector(length = 3)
         if (var.fixed == FALSE) {
-            for (i in 1:2) {
-                if (length(temp2$data[temp2$clustering == i]) > 
-                  1) 
-                  init.var.two[i] <- log(sqrt(var(temp2$data[temp2$clustering == 
-                    i])))
-                else init.var.two[i] <- log(0.5)
+            for (i in 1:3) {
+                if (length(temp3$data[temp3$clustering == i]) > 1) {
+               		init.var.three[i] <- log(sqrt(var(temp3$data[temp3$clustering == i])))
+            	} else {
+            		init.var.three[i] <- log(0.5)
+            	}
             }
         } else {
-            init.var.two[1:2] <- log(sqrt(var(data)))
+            init.var.three[1:3] <- log(sqrt(var(data)))
         }
-        z2.init <- c(init.mean.two[, 1], init.var.two, -1, -3.6, 
-            -3.6, 0)
-        z.pre <- run.nelder(numobs, z2.init, data, 
-            covars, var.fixed, epsilon, numiter, i)
+        z3.init <- c(init.mean.three[, 1], init.var.three, -0.7, 
+            -0.7, -3.6, -3.6, -3.6, -3.6, -3.6, -3.6, 0)
+        z.pre <- run.nelder(numobs, z3.init, data, covars, var.fixed, epsilon, numiter, i)
         if (!is.nan(z.pre$x[1])) {
-            z2 <- find.param.two(z.pre, var.fixed)
+            z3 <- find.param.three(z.pre, var.fixed)
         } else {
-            z2 <- NULL
+            z3 <- NULL
         }
-        if (aic) {
-            factor <- 2
-        } else if (bic) {
-            factor <- log(numobs) * delta
-        } else {
-            stop("No criteria selected")
-        }
-        z <- z2
-        nstates <- 2
-        trans.mat <- list()
+		z <- z3
+		trans.mat <- list()
         for (j in 1:(length(data) - 1)) {
-            trans.mat[[j]] <- z$LH.trans + exp(-(covars[j, 
-              1]^(z$rate1)) * prod(covars[j, -1])) * z$RH.trans
+            trans.mat[[j]] <- z$LH.trans + exp(-(covars[j, 1]^(z$rate1)) * prod(covars[j, -1])) * z$RH.trans
         }
-        Vit.seg <- Viterbi.two(data, 
-            z, trans.mat)
+        Vit.seg <- Viterbi.three(data, z, trans.mat)
         maxstate.unique <- unique(Vit.seg)
         mean <- rep(0, length(data))
         var <- rep(0, length(data))
         for (m in 1:length(maxstate.unique)) {
             mean[Vit.seg == maxstate.unique[m]] <- mean(data[Vit.seg == 
               maxstate.unique[m]])
-            var[Vit.seg == maxstate.unique[m]] <- var(data[Vit.seg == 
-              maxstate.unique[m]])
+            var[Vit.seg == maxstate.unique[m]] <- var(data[Vit.seg == maxstate.unique[m]])
         }
-        out <- cbind(matrix(Vit.seg, ncol = 1), matrix(mean, 
-            ncol = 1), matrix(var, ncol = 1))
+        out <- cbind(matrix(Vit.seg, ncol = 1), matrix(mean, ncol = 1), matrix(var, ncol = 1))
         out.all <- matrix(NA, nrow = length(kb.ord), ncol = 4)
         out.all[ind.nonna, 1:3] <- out
         out.all[, 4] <- obs.ord
@@ -466,41 +483,43 @@ CalculateCoordinate <- function(x, y){
 # Make Venn diagram
 ###################
 pcentFun <- function(x,y) {
-100 * (x / y)
+	100 * (x / y)
 }
+# !!! Before use this function, please perform this instructions: http://stackoverflow.com/a/15315369/4424721
+#############################################################################################################
 MakeVennDiagram <- function(x, set, v1, v2) {
-compare.by.venn.df <- x[, grep(set, names(x)[8:ncol(x)], perl=T, value=T)]
-compare.by.venn.df <- compare.by.venn.df[complete.cases(compare.by.venn.df), ]
-category <- names(compare.by.venn.df)
-venn.matrix <- vennCounts(compare.by.venn.df)
-areas <- venn.matrix[,ncol(venn.matrix)]
-names(areas) <- apply(venn.matrix[, c(1:(ncol(venn.matrix)-1))], 1, paste, collapse="")
-areasPcent <- round(pcentFun(areas, sum(areas)), digits=2)
-VennSet <- Venn(SetNames = category, Weight = areas)
-VennList <- compute.Venn(VennSet, doWeights = TRUE)
-VennList_pc <- VennList
-for (i in c(1:length(areasPcent))) {
-	position <- grep(names(areasPcent)[i], VennList_pc@FaceLabels$Signature)
-	VennList_pc@FaceLabels$Signature[position] <- paste(areasPcent[i], "%", sep="")
-}
-gp <- VennThemes(VennList)
-for (i in names(gp$FaceText)) gp$FaceText[[i]]$fontsize <- 12
-for (i in names(gp$SetText)) gp$SetText[[i]]$fontsize <- 15
-pdf(file=file.path(prefixDir, outputBio, paste("Venn Diagram between ", v2, " from ", v1, ".pdf", sep="")), width=8, height=12.76)
-par(mfrow=c(1, 2))
-par(mai=c(0.7, 0.7, 0.7, 0.5))
-if (ncol(venn.matrix) > 4) {
-	rowNumberMakevp <<- 1
-	plot(VennList)
-	rowNumberMakevp <<- 2
-	plot(VennList_pc, show = list(FaceText = c("signature"), DarkMatter = TRUE))
-	} else {
-		rowNumberMakevp <<- 1
-		plot(VennList, gpList=gp)
-		rowNumberMakevp <<- 2
-		plot(VennList_pc, gpList=gp, show = list(FaceText = c("signature"), DarkMatter = TRUE))
+	compare.by.venn.df <- x[, grep(set, names(x)[8:ncol(x)], perl=T, value=T)]
+	compare.by.venn.df <- compare.by.venn.df[complete.cases(compare.by.venn.df), ]
+	category <- names(compare.by.venn.df)
+	venn.matrix <- vennCounts(compare.by.venn.df)
+	areas <- venn.matrix[,ncol(venn.matrix)]
+	names(areas) <- apply(venn.matrix[, c(1:(ncol(venn.matrix)-1))], 1, paste, collapse="")
+	areasPcent <- round(pcentFun(areas, sum(areas)), digits=2)
+	VennSet <- Venn(SetNames = category, Weight = areas)
+	VennList <- compute.Venn(VennSet, doWeights = TRUE)
+	VennList_pc <- VennList
+	for (i in c(1:length(areasPcent))) {
+		position <- grep(names(areasPcent)[i], VennList_pc@FaceLabels$Signature)
+		VennList_pc@FaceLabels$Signature[position] <- paste(areasPcent[i], "%", sep="")
 	}
-dev.off()
+	gp <- VennThemes(VennList)
+	for (i in names(gp$FaceText)) gp$FaceText[[i]]$fontsize <- 12
+	for (i in names(gp$SetText)) gp$SetText[[i]]$fontsize <- 15
+	pdf(file=file.path(prefixDir, outputBio, paste("Venn Diagram between ", v2, " from ", v1, ".pdf", sep="")), width=8, height=12.76)
+	par(mfrow=c(1, 2))
+	par(mai=c(0.7, 0.7, 0.7, 0.5))
+	if (ncol(venn.matrix) > 4) {
+		rowNumberMakevp <<- 1
+		plot(VennList)
+		rowNumberMakevp <<- 2
+		plot(VennList_pc, show = list(FaceText = c("signature"), DarkMatter = TRUE))
+		} else {
+			rowNumberMakevp <<- 1
+			plot(VennList, gpList=gp)
+			rowNumberMakevp <<- 2
+			plot(VennList_pc, gpList=gp, show = list(FaceText = c("signature"), DarkMatter = TRUE))
+		}
+	dev.off()
 }
 
 # Generate heatmap from custom selection
@@ -547,6 +566,26 @@ HeatmapBySelection <- function(dataSet, corrMethod, use.opt) {
 		}
 	}
 }
+# Function for generate multiplot grafs
+#######################################
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  plots <- c(list(...), plotlist)
+  numPlots = length(plots)
+  if (is.null(layout)) {
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)), ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+ if (numPlots==1) {
+    print(plots[[1]])
+  } else {
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    for (i in 1:numPlots) {
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row, layout.pos.col = matchidx$col))
+    }
+  }
+}
 
 #######################################
 ################# END #################
@@ -566,23 +605,30 @@ if (startCol == 0) {
 } else {
 	gatcs <- read.delim(gatcFile, header=T, as.is=T, dec=".")
 }
-if (onlyEdge == T) {
-	samplesList <- samplesList[grep("edge" ,samplesList$id), ]
+if (ludoLabel == F) {
+	if (onlyEdge == T) {
+		samplesList <- samplesList[grep("edge" ,samplesList$id), ]
+	} else {
+		modS <- samplesList[grep("edge", samplesList$id), ]
+		modS$id <- sub("(.+)(edge)(.+)", paste("\\1", "all", "\\3", sep=""), modS$id, perl=T)
+		modS$conditions <- sub("(.+)edge", paste("\\1", "all", sep=""), modS$conditions, perl=T)
+	}
 } else {
-	modS <- samplesList[grep("edge", samplesList$id), ]
-	modS$id <- gsub("(.+)(edge)(.+)", paste("\\1", "all", "\\3", sep=""), modS$id, perl=T)
-	modS$conditions <- gsub("(.+)edge", paste("\\1", "all", sep=""), modS$conditions, perl=T)
+	modS <- samplesList
+	modS$id <- sub("(.+)(\\.[0-9]?)$", paste("\\1", "_all", "\\2", sep=""), modS$id, perl=T)
+	modS$conditions <- sub("(.+)", paste("\\1", "_all", sep=""), modS$conditions, perl=T)
 }
 if (needSomeFiles == T) {
 	samplesList <- samplesList[useSomeFiles, ]
 }
 gatcs <- cbind(gatcs, matrix(data=NA, nrow=nrow(gatcs), ncol=nrow(samplesList)))
-	for (i in 1:nrow(samplesList)){
-		colnames(gatcs)[startCol+i] <- samplesList$id[i]
-		load(file=samplesList$path[i])
-		if (all(gatcs$ID.il == reads2GATC$ID)) gatcs[, startCol + i] <- reads2GATC$count
-	}
+for (i in 1:nrow(samplesList)){
+	colnames(gatcs)[startCol+i] <- samplesList$id[i]
+	load(file=samplesList$path[i])
+	if (all(gatcs$ID.il == reads2GATC$ID)) gatcs[, startCol + i] <- reads2GATC$count
+}
 rm(i)
+if (ludoLabel == F) {
 	if (onlyEdge != T) {
 		modG <- gatcs[, c(1:7, grep("edge", names(gatcs)))]
 		names(modG)[8:ncol(modG)] <- gsub("(.+)(edge)(.+)", paste("\\1", "all", "\\3", sep=""), names(modG)[8:ncol(modG)], perl=T)
@@ -591,10 +637,14 @@ rm(i)
 			E <- gsub("(.+)(all)(.+)", paste("\\1", "inner", "\\3", sep=""), enzyme, perl=T)
 			modG[[enzyme]] <- gatcs[[S]] + gatcs[[E]]
 		}
-gatcs <- modG
-samplesList <- modS
-# rm(modS, modG)
+	gatcs <- modG
+	samplesList <- modS
+	# rm(modS, modG)
 	}
+} else {
+	names(gatcs)[8:ncol(gatcs)] <- sub("(.+)(\\.[0-9]?)$", "\\1_all\\2", names(gatcs)[8:ncol(gatcs)], perl=T)
+	samplesList <- modS
+}
 currentDate <- format(Sys.time(), "%d-%m-%Y")
 load.gatc.df <- paste("DF_Counts_Step_01_Raw_Counts_", currentDate, ".csv", sep="")
 WriteIntermediateFiles(source=gatcs, output.file=load.gatc.df)
@@ -936,6 +986,8 @@ rm(name)
 chromosomesVector <- unique(DATAs.norm.ave$DATA$chr)
 HMM.data <- list()
 DOMAIN.data <- list()
+DOMAIN.data.filt <- list()
+DOMAIN.data.anti <- list()
 for (listItem in 8:length(DATAs.norm.ave$DATA)) {
 	DATA.name <- sub("(.*)(_edge|_all)\\.norm\\.ave", "\\1", names(DATAs.norm.ave$DATA)[listItem])
 	HMM.data[[DATA.name]] <- list()
@@ -953,43 +1005,34 @@ for (listItem in 8:length(DATAs.norm.ave$DATA)) {
 
 		classifier <- aggregate(x=HMM.data[[DATA.name]][[dataframe.name]]$DamID.value, by=list(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output), FUN=mean)
  		
- 		if (nrow(classifier) == 2){
-			# notify if there is a problem with groupping the BioHMM outputs ("1s" and "2s") 
-			if (classifier$Group.1[1] !=1){
-				# print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 1!"), sep="")
-			}
-			if (classifier$Group.1[2] !=2){
-				# print(paste(DATA.name, ", ", dataframe.name, " - 1st classifier is not 2!"), sep="")
-			}
-			 
+ 		if (nrow(classifier) == 3){
 			# if "1s" are targets and "2s" are non-targets
-			if ((classifier$x[1] > 0) & (classifier$x[2] < 0)) {
-			# print(paste(DATA.name, ", ", dataframe.name, " - '1s' are targets and '2s' are non-targets", sep=""))
-			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 1
-			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 0
-			}
-			# if "1s" are non-targets and "2s" are targets
-			if ((classifier$x[1] < 0) & (classifier$x[2] > 0)) {
-			# print(paste(DATA.name, ", ", dataframe.name, " - '1s' are non-targets and '2s' are targets", sep=""))
-			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 2)] <- 1
-			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == 1)] <- 0
-			}
-
-			# if it is not clear what is what
-			if ((classifier$x[1] < 0) & (classifier$x[2] < 0)) {
-				# print(paste(DATA.name, ", ", dataframe.name, " - all data less then zero!", sep=""))
-			}
-
-			# if it is not clear what is what
-			if ((classifier$x[1] > 0) & (classifier$x[2] > 0)) {
-				# print(paste(DATA.name, ", ", dataframe.name, " - all data more then zero!", sep=""))
-			}
+			non_value <- (which(classifier == min(classifier$x), arr.ind=T))[1]
+			domain_value <- (which(classifier == max(classifier$x), arr.ind=T))[1]
+			ambiguous_value <- c(1:3)[!(c(1:3) %in% c(non_value, domain_value))]
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == non_value)] <- -1
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == ambiguous_value)] <- 0
+			HMM.data[[DATA.name]][[dataframe.name]]$target[(HMM.data[[DATA.name]][[dataframe.name]]$BioHMM.output == domain_value)] <- 1
 		} else {
 			print(paste(DATA.name, ", ", dataframe.name, " - not enough data!", sep=""))
 		}
 		if ("target" %in% names(HMM.data[[DATA.name]][[dataframe.name]])){
+			tmp_rle <- rle(HMM.data[[DATA.name]][[dataframe.name]]$target)
+			tmp_rle$values[tmp_rle$lengths <= 2 & tmp_rle$values == 1] <- 0
+			HMM.data[[DATA.name]][[dataframe.name]]$target.filt <- inverse.rle(tmp_rle)
+
 			domains <- FeatureCalls.to.GFF.like(start.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$start, end.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$end, feature.type=HMM.data[[DATA.name]][[dataframe.name]]$target)
 			domains <- cbind(chr=HMM.data[[DATA.name]][[dataframe.name]]$chr[1], domains, stringsAsFactors=F)
+
+			antidomains <- domains[domains$value!=1,]
+			antidomains <- cbind(antidomains, NA, NA, NA, NA, NA)
+			antidomains <- antidomains[,c(1,5,6,2,3,4,7,8,9)]
+			names(antidomains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+			antiprotein.name <- tolower(sub("([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z_0-9]+)", "\\2.anti.domain", DATA.name, perl=T))
+			DATA.antidomain.name <- sub("(.*)", "\\1.anti.domains", DATA.name, perl=T)
+			antidomains$feature[domains$score!=1] <- antiprotein.name
+			antidomains[, c(2,7:9)] <- "."
+
 			domains <- domains[domains$value==1,]
 			domains <- cbind(domains, NA, NA, NA, NA, NA)
 			domains <- domains[,c(1,5,6,2,3,4,7,8,9)]
@@ -998,17 +1041,176 @@ for (listItem in 8:length(DATAs.norm.ave$DATA)) {
 			DATA.domain.name <- sub("(.*)", "\\1.domains", DATA.name, perl=T)
 			domains$feature[domains$score==1] <- protein.name
 			domains[, c(2,7:9)] <- "."
+
 			if (chr == 1) {DOMAIN.data[[DATA.domain.name]] <- domains;} else {DOMAIN.data[[DATA.domain.name]] <- rbind(DOMAIN.data[[DATA.domain.name]], domains);}
+			if (chr == 1) {DOMAIN.data.anti[[DATA.antidomain.name]] <- antidomains;} else {DOMAIN.data.anti[[DATA.antidomain.name]] <- rbind(DOMAIN.data.anti[[DATA.antidomain.name]], antidomains);}
+
+
+			domains <- FeatureCalls.to.GFF.like(start.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$start, end.coordinate=HMM.data[[DATA.name]][[dataframe.name]]$end, feature.type=HMM.data[[DATA.name]][[dataframe.name]]$target.filt)
+			if (length(domains$value[domains$value==1]) > 0) {
+				domains <- cbind(chr=HMM.data[[DATA.name]][[dataframe.name]]$chr[1], domains, stringsAsFactors=F)
+				domains <- domains[domains$value==1,]
+				domains <- cbind(domains, NA, NA, NA, NA, NA)
+				domains <- domains[,c(1,5,6,2,3,4,7,8,9)]
+				names(domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+				protein.name <- tolower(sub("([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z_0-9]+)", "\\2.domain", DATA.name, perl=T))
+				DATA.filtdomain.name <- sub("(.*)", "\\1.domains", DATA.name, perl=T)
+				domains$feature[domains$score==1] <- protein.name
+				domains[, c(2,7:9)] <- "."
+				if ( chr == 1 ) {DOMAIN.data.filt[[DATA.filtdomain.name]] <- domains;} else {DOMAIN.data.filt[[DATA.filtdomain.name]] <- rbind(DOMAIN.data.filt[[DATA.filtdomain.name]], domains);}
+			}
 		} else {
 			print(paste("No data in ", DATA.name, " - ", dataframe.name, ".", sep=""))
 		}
 	}
-	gff.file <- file.path(prefixDir, outputGff, outputDomain, paste(DATA.domain.name, "gff", sep="."))
+	gff.file <- file.path(prefixDir, outputGff, outputDomain, "constitutive", paste(DATA.domain.name, "_constitutive.gff", sep=""))
+	gff.file.filt <- file.path(prefixDir, outputGff, outputDomain, "filt", paste(DATA.domain.name, "_filt.gff", sep=""))
+	gff.file.anti <- file.path(prefixDir, outputGff, outputDomain, "anti", paste(DATA.domain.name, "_anti.gff", sep=""))
+
+	for (i in c("constitutive", "filt", "anti")) {
+		ifelse(!dir.exists(file.path(prefixDir, outputGff, outputDomain, i)), dir.create(file.path(prefixDir, outputGff, outputDomain, i), showWarnings=FALSE), FALSE)
+	}
+
 	write.table(DOMAIN.data[[DATA.domain.name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+	write.table(DOMAIN.data.filt[[DATA.filtdomain.name]], file=gff.file.filt, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+	write.table(DOMAIN.data.anti[[DATA.antidomain.name]], file=gff.file.anti, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
 }
 print("Congratulations!!!")
+stop("Do not need to go further", call. = FALSE)
+# GFFFormatting(input_df=HMM.data[[DATA.name]][[dataframe.name]], output_df=DOMAIN.data, typeOfFeature=HMM.data[[DATA.name]][[dataframe.name]]$target, data_name=DATA.name, chromosome=chr)
+
+# GFFFormatting <- function(input_df, output_df, typeOfFeature, data_name, chromosome) {
+# 	domains <- FeatureCalls.to.GFF.like(start.coordinate=input_df$start, end.coordinate=input_df$end, feature.type=typeOfFeature)
+# 	domains <- cbind(chr=input_df$chr[1], domains, stringsAsFactors=F)
+# 	domains <- domains[domains$value==1,]
+# 	domains <- cbind(domains, NA, NA, NA, NA, NA)
+# 	domains <- domains[,c(1,5,6,2,3,4,7,8,9)]
+# 	names(domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+# 	protein.name <- tolower(sub("([a-zA-Z]+)\\.([a-zA-Z0-9]+)\\.([a-zA-Z_0-9]+)", "\\2.domain", data_name, perl=T))
+# 	DATA.domain.name <<- sub("(.*)", "\\1.domains", data_name, perl=T)
+# 	domains$feature[domains$score==1] <- protein.name
+# 	domains[, c(2,7:9)] <- "."
+# 	if (chromosome == 1) {output_df[[DATA.domain.name]] <<- domains;} else {output_df[[DATA.domain.name]] <<- rbind(output_df[[DATA.domain.name]], domains);}
+# }
 
 print("Search Biology meaning...")
+
+# Declare functions
+###################
+
+MakeReportDomainsSize <- function(inputData, dscr, includeHet=T) {
+	domainSizeReport <- as.data.frame(matrix(NA, nrow=0, ncol=5))
+	names(domainSizeReport) <- c("Item.name", "Genome.size", "Domain.size", "Ratio", "Selected.chromosomes")
+	getChrList <- names(Dmelanogaster)[-c(which(names(Dmelanogaster) == c("chrU", "chrM", "chrUextra")))]
+	if (includeHet != T) {
+		getChrList <- getChrList[-grep("Het", getChrList)]
+		modificator <- "without_Heterochromatin"
+	} else {
+		modificator <- ""
+	}
+	chr.lengths <- integer()
+	for (i in getChrList) chr.lengths <- append(chr.lengths, length(DNAString(Dmelanogaster[[i]])))
+	AllGenome <- sum(chr.lengths)
+	getChrList <- sub("chr(.*)", "\\1", getChrList, perl=T)
+	for (item in names(inputData)) {
+		if (includeHet != T) {
+		domainsSize <- sum(inputData[[item]]$end[inputData[[item]]$seqname %in% getChrList]-inputData[[item]]$start[inputData[[item]]$seqname %in% getChrList])
+		fifthCol <- paste(unique(inputData[[item]]$seqname[inputData[[item]]$seqname %in% getChrList]), collapse=", ")
+		} else {
+		domainsSize <- sum(inputData[[item]]$end-inputData[[item]]$start)
+		fifthCol <- paste(unique(inputData[[item]]$seqname), collapse=", ")
+		}
+		partOfDomainFromGenome <- paste(round(pcentFun(domainsSize, AllGenome), digits=3), "%", sep="")
+		domainSizeReport[grep(paste("^",item, "$", sep=""), names(inputData)),] <- c(item, AllGenome, domainsSize, partOfDomainFromGenome, fifthCol)
+	}
+	reportFile <- file.path(prefixDir, outputBio, paste("Report_about", dscr, modificator,"domains_part_from_genome_D.melanogaster.csv", sep="_"))
+	write.table(domainSizeReport, file=reportFile, sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+	# dfHist <- domainSizeReport[,c(1,4)]
+	# dfHist$Ratio <- as.numeric(sub("(.*)%$", "\\1", dfHist$Ratio, perl=T))
+	# reportHist <- ggplot(dfHist, aes(x=Item.name, y=Ratio)) + geom_histogram(colour="black", binwidth=0.3)
+}
+
+
+
+IntersectDomain <- function(inputData, Tset, Pset, dscr, ScoreValue) {
+	DOMAIN.data.part <- inputData[grep(paste("(", paste(tissue.bio.set, collapse="|"), ")\\.(", paste(protein.bio.set, collapse="|"), ")\\.(", paste(conditions.bio.set, collapse="|"), ")\\..*", sep="") ,names(inputData), perl=T)]
+	COMPARE.data <- list()
+	for (i in c(2:5)) {
+		if (i == 2) {
+			tissue_list <- combn(Tset, i, simplify=F)
+		} else {
+			tissue_list <- append(tissue_list, combn(Tset, i, simplify=F))
+		}
+	}
+	for (protein in Pset) {
+		for (tissueSet in tissue_list) {
+			setsSize <- length(tissueSet)
+			compare_list <- list()
+			chr_compare <- list()
+			for (tissue in tissueSet) {
+				name <- grep(paste(tissue,"\\.",protein,"\\..*", sep=""),names(DOMAIN.data.part), value=T, perl=T)
+				chr_compare[[tissue]] <- unique(DOMAIN.data.part[[name]]$seqname)
+			}
+			if (setsSize < 2) {
+				print("The comparison is not applicable!")
+			} else if (setsSize == 2) {
+				chr_list <- intersect(chr_compare[[names(chr_compare[1])]], chr_compare[[names(chr_compare[2])]])
+			} else if (setsSize == 3) {
+				chr_list <- intersect(chr_compare[[names(chr_compare[3])]], intersect(chr_compare[[names(chr_compare[1])]], chr_compare[[names(chr_compare[2])]]))
+			} else if (setsSize == 4) {
+				chr_list <- intersect(chr_compare[[names(chr_compare[4])]], intersect(chr_compare[[names(chr_compare[3])]], intersect(chr_compare[[names(chr_compare[1])]], chr_compare[[names(chr_compare[2])]])))
+			} else if (setsSize == 5){
+				chr_list <- intersect(chr_compare[[names(chr_compare[5])]], intersect(chr_compare[[names(chr_compare[4])]], intersect(chr_compare[[names(chr_compare[3])]], intersect(chr_compare[[names(chr_compare[1])]], chr_compare[[names(chr_compare[2])]]))))
+			} else {
+				print("")
+			}
+			for (x in chr_list) {
+				for (tissue in tissueSet) {
+					name <- grep(paste(tissue,"\\.",protein,"\\..*", sep=""),names(DOMAIN.data.part), value=T, perl=T)
+					dfIRanges <- DOMAIN.data.part[[name]][DOMAIN.data.part[[name]]$seqname == x, c("start", "end")] 
+					objIRanges <- with(dfIRanges, IRanges(start, end))
+					compare_list[[name]] <- objIRanges
+				}
+				if (setsSize < 2) {
+				print("The comparison is not applicable!")
+				} else if (setsSize == 2) {
+					compareResult <- as.data.frame(intersect(compare_list[[names(compare_list[1])]], compare_list[[names(compare_list[2])]]))
+				} else if (setsSize == 3) {
+					compareResult <- as.data.frame(intersect(compare_list[[names(compare_list[3])]], intersect(compare_list[[names(compare_list[1])]], compare_list[[names(compare_list[2])]])))
+				} else if (setsSize == 4) {
+					compareResult <- as.data.frame(intersect(compare_list[[names(compare_list[4])]], intersect(compare_list[[names(compare_list[3])]], intersect(compare_list[[names(compare_list[1])]], compare_list[[names(compare_list[2])]]))))
+				} else if (setsSize == 5) {
+					compareResult <- as.data.frame(intersect(compare_list[[names(compare_list[5])]], intersect(compare_list[[names(compare_list[4])]], intersect(compare_list[[names(compare_list[3])]], intersect(compare_list[[names(compare_list[1])]], compare_list[[names(compare_list[2])]])))))
+				}
+				if (nrow(compareResult) != 0) {
+					compareResult <- compareResult[compareResult$width!=1,]
+					compareResult$seqname <- x
+					compareResult <- compareResult[, c("seqname", "start", "end")]
+					if (exists("compareDf") == T) {
+						compareDf <- rbind(compareDf, compareResult)
+					} else {
+						compareDf <- compareResult
+					}
+				} else next()
+			}
+			compareDf <- cbind(compareDf, as.data.frame(matrix(NA, ncol=6, nrow=nrow(compareDf))))
+			compareDf <- compareDf[,c(1,5,6,2,3,4,7,8,9)]
+			names(compareDf) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+			protein.name <- tolower(paste(protein, dscr, "domain", sep="."))
+			compareDf$feature <- protein.name
+			compareDf$score <- ScoreValue
+			compareDf[, c(2,7:9)] <- "."
+			compare.domain.name <- paste(sapply(tissueSet, function(tiss) grep(paste(tiss,"\\.",protein,"\\..*", sep=""),names(DOMAIN.data.part), value=T, perl=T)), collapse="_vs_")
+			COMPARE.data[[compare.domain.name]] <- compareDf
+			gff.file <- file.path(prefixDir, outputGff, outputDomain, dscr, paste(compare.domain.name, dscr, "gff", sep="."))
+			ifelse(!dir.exists(file.path(prefixDir, outputGff, outputDomain, dscr)), dir.create(file.path(prefixDir, outputGff, outputDomain, dscr), showWarnings=FALSE), FALSE)
+			write.table(COMPARE.data[[compare.domain.name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+			rm(compareDf)
+		}
+	}
+	return(COMPARE.data)
+}
+
 # Heatmap Correlation
 kc.list <- list.files("/home/anton/backup/input/KC", full.names=T)
 DATA.venn <- DATAs.norm.ave$DATA[, c(1:7)]
@@ -1044,8 +1246,9 @@ for (i in names(DATA.middle.part)[8:ncol(DATA.middle.part)]) {
 			}
 		}
 	}
-	compare.vector <- match(DATA.venn$GATC.ID, target.df$ID)
+	compare.vector <- match(DATA.venn$ID, target.df$ID)
 	DATA.venn[[name.bound]] <- target.df$target[compare.vector]
+	DATA.venn[[name.bound]][DATA.venn[[name.bound]] == -1] <- 0
 	rm(target.df)
 }
 print("Make Venn Diagram")
@@ -1056,16 +1259,330 @@ for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste("(Kc167|BR|F
 
 # Count area domain from whole genome
 #####################################
-domainSizeReport <- as.data.frame(matrix(NA, nrow=0, ncol=5))
-names(domainSizeReport) <- c("Item.name", "Genome.size", "Domain.size", "Ratio", "Selected.chromosomes")
-for (item in names(DOMAIN.data)) {
-	getChrList <- paste("chr", unique(DOMAIN.data[[item]][,1]), sep="")
-	domainsSize <- sum(DOMAIN.data[[item]]$end-DOMAIN.data[[item]]$start)
-	chr.lengths <- integer()
-	for (i in getChrList) chr.lengths <- append(chr.lengths, length(DNAString(Dmelanogaster[[i]])))
-	AllGenome <- sum(chr.lengths)
-	partOfDomainFromGenome <- paste(round(pcentFun(domainsSize, AllGenome), digits=3), "%", sep="")
-	domainSizeReport[grep(item, names(DOMAIN.data)),] <- c(item, AllGenome, domainsSize, partOfDomainFromGenome, paste(unique(DOMAIN.data[[item]][,1]), collapse=", "))
+KC.DOMAIN <- list()
+KC.DOMAIN.ANTI <- list()
+for (i in kc.list) {
+	kc <- read.delim(i, header=T, sep="\t", skip=17, stringsAsFactors=F)
+	name <- sub("([a-zA-Z0-9].+)-([a-zA-Z0-9].+)_xx_.*", "\\1.\\2.m.domains", basename(i) ,perl=T)
+	for (y in unique(kc$seqname)) {
+		kc_domains <- FeatureCalls.to.GFF.like(start.coordinate=kc$start[kc$seqname == y], end.coordinate=kc$end[kc$seqname == y], feature.type=kc$bound[kc$seqname == y])
+		kc_domains <- cbind(chr=y, kc_domains, stringsAsFactors=F)
+
+		kc_anti_domains <- kc_domains[kc_domains$value!=1,]
+		kc_anti_domains <- cbind(kc_anti_domains, NA, NA, NA, NA, NA)
+		kc_anti_domains <- kc_anti_domains[,c(1,5,6,2,3,4,7,8,9)]
+		names(kc_anti_domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+		kc.antidomain.name <- sub("([a-zA-Z0-9].+)-([a-zA-Z0-9].+)_xx_.*", "\\1.\\2.m.anti.domains", basename(i) ,perl=T)
+		antiprotein.name <- tolower(kc.antidomain.name)
+		kc_anti_domains$feature <- antiprotein.name
+		kc_anti_domains[, c(2,7:9)] <- "."
+		kc_anti_domains$seqname <- sub("chr(.*)", "\\1", kc_anti_domains$seqname, perl=T)
+		KC.DOMAIN.ANTI[[kc.antidomain.name]] <- rbind(KC.DOMAIN.ANTI[[kc.antidomain.name]], kc_anti_domains)
+
+		kc_domains <- kc_domains[kc_domains$value==1,]
+		kc_domains <- cbind(kc_domains, NA, NA, NA, NA, NA)
+		kc_domains <- kc_domains[,c(1,5,6,2,3,4,7,8,9)]
+		names(kc_domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
+		kc.domain.name <- sub("([a-zA-Z0-9].+)-([a-zA-Z0-9].+)_xx_.*", "\\1.\\2.m.domains", basename(i) ,perl=T)
+		protein.name <- tolower(kc.domain.name)
+		kc_domains$feature <- protein.name
+		kc_domains[, c(2,7:9)] <- "."
+		kc_domains$seqname <- sub("chr(.*)", "\\1", kc_domains$seqname, perl=T)
+		KC.DOMAIN[[kc.domain.name]] <- rbind(KC.DOMAIN[[kc.domain.name]], kc_domains)
+	}
+	gff.file <- file.path(prefixDir, outputGff, outputDomain, paste(name, "gff", sep="."))
+	gff.file.anti <- file.path(prefixDir, outputGff, outputDomain, paste(name, "anti.gff", sep="."))
+
+	write.table(KC.DOMAIN[[name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+	write.table(KC.DOMAIN.ANTI[[name]], file=gff.file.anti, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+
 }
-reportFile <- file.path(prefixDir, outputBio, "Report_about_domains_part_from_genome_D.melanogaster.csv")
-write.table(domainSizeReport, file=reportFile, sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+DOMAIN.data <- append(DOMAIN.data, KC.DOMAIN)
+DOMAIN.data.filt <- append(DOMAIN.data.filt, KC.DOMAIN)
+DOMAIN.data.anti <- append(DOMAIN.data.anti, KC.DOMAIN.ANTI)
+
+MakeReportDomainsSize(DOMAIN.data, "constitutive")
+MakeReportDomainsSize(DOMAIN.data, "constitutive", includeHet=F)
+
+MakeReportDomainsSize(DOMAIN.data.filt, "filtered")
+MakeReportDomainsSize(DOMAIN.data.filt, "filtered", includeHet=F)
+
+MakeReportDomainsSize(DOMAIN.data.anti, "anti")
+MakeReportDomainsSize(DOMAIN.data.anti, "anti", includeHet=F)
+
+# Make boxplot & histogram from BioHMM data
+for (i in names(HMM.data)) {
+	for (x in names(HMM.data[[i]])){
+		setDomain <- unique(HMM.data[[i]][[x]]$BioHMM.output)
+		if ("target" %in% names(HMM.data[[i]][[x]])){
+			if (exists("vecHist2") == F) {
+				tmp <- rle(HMM.data[[i]][[x]]$target)
+				vecHist2 <- tmp$length[tmp$values == 1]
+			} else {
+				tmp <- rle(HMM.data[[i]][[x]]$target)
+				vecHist2 <- append(vecHist2, tmp$length[tmp$values == 1])
+			}
+		}
+		if (length(setDomain) < 3) {
+			if (length(setDomain) == 2) {
+				if (all(sort(setDomain) == c(1,3))) labelsDomain <- c("-1", "1")
+				if (all(sort(setDomain) == c(1,2))) labelsDomain <- c("-1", "0")
+				if (all(sort(setDomain) == c(2,3))) labelsDomain <- c("0", "1")
+				} else {
+					if (setDomain == 1) labelsDomain <- "-1"
+					if (setDomain == 2) labelsDomain <- "0"
+					if (setDomain == 3) labelsDomain <- "1"
+				}
+		} else {
+			labelsDomain <- c("-1", "0", "1")
+		}
+		if(exists("dfBox") == F) {
+			dfBox <- data.frame("DamID.value"=HMM.data[[i]][[x]]$DamID.value, "BioHMM.output"=factor(HMM.data[[i]][[x]]$BioHMM.output, labels=labelsDomain), "chr"=factor(HMM.data[[i]][[x]]$chr, labels=x))
+		} else {
+			dfBox <- rbind(dfBox, data.frame("DamID.value"=HMM.data[[i]][[x]]$DamID.value, "BioHMM.output"=factor(HMM.data[[i]][[x]]$BioHMM.output, labels=labelsDomain), "chr"=factor(HMM.data[[i]][[x]]$chr, labels=x)))
+		}
+	}
+	plot1 <- ggplot(aes(y = DamID.value, x = chr, fill = BioHMM.output), data = dfBox) + geom_boxplot() + labs(title=paste(i, "BioHMM output", sep="\n"))
+	domain.name <- paste(i, "domains", sep=".")
+	vecHist <- (DOMAIN.data[[domain.name]]$end - DOMAIN.data[[domain.name]]$start)/1000
+	plot2 <- ggplot() + aes(vecHist)
+	if (max(vecHist) >= 300) {
+		plot2 <- plot2 + geom_histogram(binwidth = 1, colour="black", fill="white") + coord_cartesian(xlim = c(0, 300)) + labs(x=paste("Domain size in kb. Image has been scaled. Max value is equal", max(vecHist), sep=" "))
+	} else {
+		plot2 <- plot2 + geom_histogram(binwidth = max(vecHist)/300, colour="black", fill="white") + coord_cartesian(xlim = c(0, max(vecHist))) + labs(x="Domain size in kb")
+	}
+	plot3 <- ggplot() + aes(vecHist2)
+	if (max(vecHist2) >= 300) {
+		plot3 <- plot3 + geom_histogram(binwidth = 1, colour="black", fill="white") + coord_cartesian(xlim = c(0, 300)) + labs(x=paste("Domain size in GATC fragments. Image has been scaled. Max value is equal", max(vecHist2), sep=" "))
+	} else {
+		plot3 <- plot3 + geom_histogram(binwidth = max(vecHist2)/300, colour="black", fill="white") + coord_cartesian(xlim = c(0, max(vecHist2))) + labs(x="Domain size in GATC fragments")
+	}
+	bmp(filename=file.path(prefixDir, outputBio, outputBioBoxplot, paste("Graph_on_BioHMM_Data_from", i, ".bmp", sep="")), width=1920, height=1080, units = "px")
+	print(multiplot(plot1, plot2, plot3))
+	dev.off()
+	rm(dfBox, vecHist2)
+}
+print("End of bio-analyzing")
+
+# Domain intersection
+
+COMPARE.data <- IntersectDomain(inputData=DOMAIN.data, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="constitutive", ScoreValue=1)
+COMPARE.data.filt <- IntersectDomain(inputData=DOMAIN.data.filt, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="filt", ScoreValue=1)
+COMPARE.data.antidomains <- IntersectDomain(inputData=DOMAIN.data.anti, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="anti", ScoreValue=-1)
+
+# Write stistics from compared data
+MakeReportDomainsSize(COMPARE.data, "compare_constitutive")
+MakeReportDomainsSize(COMPARE.data.antidomains, "compare_anti")
+
+#Make histogramm from compared data
+for (i in names(COMPARE.data)) {
+	vecHist <- (COMPARE.data[[i]]$end - COMPARE.data[[i]]$start)/1000
+	plot2 <- ggplot() + aes(vecHist)
+	if (max(vecHist) >= 300) {
+		plot2 <- plot2 + geom_histogram(binwidth = 1, colour="black", fill="white") + coord_cartesian(xlim = c(0, 300)) + labs(x=paste("Domain size in kb. Image has been scaled. Max value is equal", max(vecHist), sep=" "))
+	} else {
+		plot2 <- plot2 + geom_histogram(binwidth = max(vecHist)/300, colour="black", fill="white") + coord_cartesian(xlim = c(0, max(vecHist))) + labs(x="Domain size in kb")
+	}
+	bmp(filename=file.path(prefixDir, outputBio, outputBioBoxplot, paste("Histogram_on_Compared_BioHMM_Data_from", i, ".bmp", sep="")), width=1920, height=1080, units = "px")
+	print(plot2)
+	dev.off()
+}
+
+#######################################################################
+############## GATCs overlaps Genes ###################################
+#######################################################################
+AssignGATCsToGenes <- function(Genes, GATCs){
+Results <- as.data.frame(nonzero(regionOverlap(Genes, GATCs)))
+colnames(Results) <- c("RowNumber", "ColNumber")
+CompareResults <- cbind(GATCs[Results$ColNumber, c("ID","chr","start","end")], data.frame("Genes.ID" = Genes$ID[Results$RowNumber], "TSS" = Genes$start[Results$RowNumber], "strand" = Genes$strand[Results$RowNumber]))
+rownames(CompareResults) <- NULL
+return(CompareResults)
+}
+gatcG <- read.delim(gatcFile4Genes, header=T, sep="\t", stringsAsFactors=F)
+Genes <- read.delim(genesFilePath, header=T, as.is=T, dec=".")
+Genes <- Genes[Genes$chr %in% intersect(unique(Genes$chr), unique(gatcG$chr)),]
+gatcG <- gatcG[gatcG$chr %in% intersect(unique(Genes$chr), unique(gatcG$chr)),]
+Genes[Genes$strand == "+", "end"] <- Genes[Genes$strand == "+", "start"]
+Genes[Genes$strand == "-", "start"] <- Genes[Genes$strand == "-", "end"]
+GATCvsGenes <- AssignGATCsToGenes(Genes, gatcG)
+idx.gatc.ori <- unlist(sapply(GATCvsGenes$ID, function(x) grep(x, gatcG$ID)))
+GATCvsGenes.List <- list()
+
+for (i in tissueExprSet) {
+	tissueSelection <- list.files(path=exprDataDir, pattern=paste(i, "_.*", sep=""), full.names=T)
+	if (length(tissueSelection) > 1) {
+		tissueNames <- file_path_sans_ext(list.files(path=exprDataDir, pattern=paste(i, "_.*", sep="")))
+		for (y in tissueSelection) {
+			exprTissue <- read.delim(y, header=F, stringsAsFactors=F, sep="\t")
+			if (exists("rnaSeq")==F) {
+				rnaSeq <- data.frame(exprTissue[, 2])
+			} else {
+				rnaSeq <- cbind(rnaSeq, exprTissue[, 2])
+			}
+		}
+		names(rnaSeq) <- tissueNames
+		rownames(rnaSeq) <- exprTissue[,1]
+		if (sum(is.na(rnaSeq)) != 0) {
+			rnaSeq[is.na(rnaSeq),] <- 0
+	 	}
+		conditions <- rep(i, 2)
+		exprData <-newCountDataSet(countData=rnaSeq, conditions=conditions)
+		exprData <- estimateSizeFactors(exprData)
+		exprData <- estimateDispersions(exprData)
+		exprResults <- nbinomTest(exprData, i, i)
+	} else {
+		exprResults <- read.delim(tissueSelection, header=F, stringsAsFactors=F, sep="\t")
+		names(exprResults) <- c("id", "baseMean")
+	}
+	tmpDF <- GATCvsGenes
+	if (i == "Kc167") {
+		tempDATA <- DATA.part 
+	} else {
+		tempDATA <- DATAs.norm.ave$DATA
+	}
+	for (z in protein.bio.set) {
+		dataSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions.bio.set, collapse="|"), ")_(all|edge).*",sep=""), names(tempDATA), value=T, perl=T)
+		df <-tempDATA[, c("ID", dataSet)]
+		if (i == "Kc167") {
+			hmmSet <- grep(paste(i, "\\.", z, "\\.bound", sep=""), names(DATA.venn), value=T, perl=T)
+			hmm.df <- DATA.venn[, c(1:7, grep(hmmSet, names(DATA.venn)))]
+			hmm.df <- hmm.df[!(is.na(hmm.df[,ncol(hmm.df)])),]
+			names(hmm.df)[ncol(hmm.df)] <- "target"
+		} else {
+			hmmSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions.bio.set, collapse="|"), ")$",sep=""), names(HMM.data), value=T, perl=T)
+			hmm.df <- rbind.fill(HMM.data[[hmmSet]])
+		}
+		idx.hmm <- which(df$ID %in% hmm.df$ID)
+		df <- cbind(df, as.data.frame(matrix(NA, ncol=2, nrow=nrow(df))))
+		names(df)[3:4] <- paste(hmmSet, c("target", "target.filt"), sep="_")
+		df[,3][idx.hmm] <- hmm.df$target
+		if (i != "Kc167") {
+			df[,4][idx.hmm] <- hmm.df$target.filt
+		}
+		tmpDF <- cbind(tmpDF, df[idx.gatc.ori, c(2:4)])
+	}
+	idx.fbgn.ori <- match(tmpDF$Genes.ID, exprResults$id)
+	tmpDF$expression <- exprResults$baseMean[idx.fbgn.ori]
+	GATCvsGenes.List[[i]] <- tmpDF
+	rm(rnaSeq, tmpDF)
+}
+
+# selector <- grep("WID\\.PC\\.(Late|Early)", names(HMM.data), value=T)
+
+# selector <- grep("SG\\.LAM\\.wt", names(HMM.data), value=T)
+
+# selector <- grep("BR\\.LAM\\.m$", names(HMM.data), value=T)
+# for (wid in selector) {
+# 	widdf <- rbind.fill(HMM.data[[wid]])
+# 	dataSet <- grep(paste(wid, "_(all|edge).*", sep=""), names(DATAs.norm.ave$DATA))
+# 	gatcdf <- DATAs.norm.ave$DATA[, c(1:7, dataSet)]
+# 	index <- which(gatcdf$ID %in% widdf$ID)
+# 	gatcdf <- cbind(gatcdf, as.data.frame(matrix(NA, ncol=3, nrow=nrow(gatcdf))))
+# 	names(gatcdf)[c(1,9:11)] <- c("GATC.ID", "BioHMM.output", "target", "target.filt")
+# 	gatcdf$BioHMM.output[index] <- widdf$BioHMM.output
+# 	gatcdf$target[index] <- widdf$target
+# 	gatcdf$target.filt[index] <- widdf$target.filt
+# 	# widFile <- file.path(prefixDir, outputBio, paste("USA_HMM_data_3state_from_", wid, ".csv", sep=""))
+# 	# write.table(gatcdf, file=widFile, sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
+# }
+
+# Count statistic
+
+Stat_BoxList <- list()
+Stat_BoxList_3ds <- list()
+for (i in names(GATCvsGenes.List)) {
+	for (x in protein.bio.set) {
+		target.pos <- grep(paste(".*", x, ".*target$", sep=""), names(GATCvsGenes.List[[i]]), value=T)
+		expr.pos <- ncol(GATCvsGenes.List[[i]])
+		vectorPlus <- GATCvsGenes.List[[i]][[target.pos]] == 1 & !(is.na(GATCvsGenes.List[[i]][[target.pos]]))
+		vectorMinus <- GATCvsGenes.List[[i]][[target.pos]] == -1 & !(is.na(GATCvsGenes.List[[i]][[target.pos]]))
+		vectorZero <- GATCvsGenes.List[[i]][[target.pos]] == 0 & !(is.na(GATCvsGenes.List[[i]][[target.pos]]))
+
+		vectorZeroMinus <- (GATCvsGenes.List[[i]][[target.pos]] == -1 | GATCvsGenes.List[[i]][[target.pos]] == 0) & !(is.na(GATCvsGenes.List[[i]][[target.pos]]))
+
+		target_one <- GATCvsGenes.List[[i]][vectorPlus, target.pos]
+		target_zero_minus <- rep(0, length(vectorZeroMinus[vectorZeroMinus==T]))
+
+		target_minus <- GATCvsGenes.List[[i]][vectorMinus, target.pos]
+		target_zero <-GATCvsGenes.List[[i]][vectorZero, target.pos]
+
+		expr_one <- GATCvsGenes.List[[i]][vectorPlus, expr.pos]
+		expr_zero_minus <- GATCvsGenes.List[[i]][vectorZeroMinus, expr.pos]
+
+		expr_minus <- GATCvsGenes.List[[i]][vectorMinus, expr.pos]
+		expr_zero <-GATCvsGenes.List[[i]][vectorZero, expr.pos]
+
+		if (exists("dfBox") == F) {
+			dfBox <- data.frame("protein" = x, "bind" = c(target_one, target_zero_minus), "expression" = c(expr_one, expr_zero_minus))
+			dfBox3st <- data.frame("protein" = x, "bind" = c(target_one, target_zero, target_minus), "expression" = c(expr_one, expr_zero, expr_minus))
+
+		} else {
+			dfBox <- rbind(dfBox, data.frame("protein" = x, "bind" = c(target_one, target_zero_minus), "expression" = c(expr_one, expr_zero_minus)))
+			dfBox3st <- rbind(dfBox3st, data.frame("protein" = x, "bind" = c(target_one, target_zero, target_minus), "expression" = c(expr_one, expr_zero, expr_minus)))
+		}
+	}
+	boxplot_folder <- file.path(prefixDir, outputBio, outputExpr)
+	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputExpr)), dir.create(file.path(prefixDir, outputBio, outputExpr), showWarnings=FALSE), FALSE)
+	dfBox$bind <- factor(dfBox$bind, labels=c("not bind", "bind"))
+	Stat_BoxList[[i]] <- dfBox
+	Stat_BoxList_3ds[[i]] <- dfBox3st
+	dfBox$expression <- log2(dfBox$expression + 1)
+
+	if (length(unique(dfBox3st$bind)) < 3) {
+		dfBox3st$bind <- factor(dfBox3st$bind, labels=c("ambiguous", "bind"))
+	} else {
+		dfBox3st$bind <- factor(dfBox3st$bind, labels=c("not bind", "ambiguous", "bind"))
+	}
+	dfBox3st$expression <- log2(dfBox3st$expression + 1)
+
+	plot_box <- ggplot(aes(y = expression, x = bind, fill=bind), data = dfBox) + geom_boxplot() + labs(title=paste(i, " tissue.", "\nBioHMM output", sep="")) + facet_grid(. ~ protein)
+
+	# plot_box <- ggplot(aes(y = expression, x = bind, fill=bind), data = dfBox) + geom_boxplot() + facet_grid(. ~ protein) + theme(legend.position = "none") + theme(strip.text.x = element_text(size=25))
+
+	plot_box2 <- plot_box + theme(legend.position = "none") + theme(strip.text.x = element_text(size=25), axis.text=element_text(size=16), axis.title.x=element_blank(), axis.title.y=element_text(size=22)) + ylab("Genes log2 (RNA tag count + 1)")
+	plot_box2 + scale_x_continuous(label=c("TSS not bound", "TSS bound"))
+
+
+	plot_box3st <- ggplot(aes(y = expression, x = bind, fill=bind), data = dfBox3st) + geom_boxplot() + labs(title=paste(i, " tissue.", "\nBioHMM output. 3 state interpretation.", sep="")) + facet_grid(. ~ protein)
+	plot_hist <- ggplot(dfBox, aes(x=expression, fill=bind)) + geom_histogram(colour="black", binwidth=0.3) + scale_y_sqrt() + facet_grid(bind ~ protein)
+	# pdf(file=file.path(boxplot_folder, paste("Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
+	# print(plot_box)
+	# dev.off()
+	# pdf(file=file.path(boxplot_folder, paste("3State_Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
+	# print(plot_box3st)
+	# dev.off()
+	# pdf(file=file.path(boxplot_folder, paste("Histogram_expression_data_with_binding_from_", i, ".pdf", sep="")), width=18, height=12)
+	# print(plot_hist)
+	# dev.off()
+	rm(dfBox, dfBox3st)
+}
+
+# Count P-value by wilcox-text
+by(Stat_BoxList$BR$expression, INDICES = list(Stat_BoxList$BR$protein, Stat_BoxList$BR$bind), wilcox.test)
+
+for (i in names(Stat_BoxList)) {
+	for (y in levels(Stat_BoxList[[i]]$protein)) {
+		wilcoxStat <- wilcox.test(Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "bind", "expression"], Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "not bind", "expression"])
+		print(paste(y, " in ", i, ". P-value: ", wilcoxStat$p.value, sep=""))
+	}
+}
+
+
+# intersect domain data and combination with expression dataframe
+# Genes variable report us expression data, DOMAIN.data and COMPARE.data as well as their "anti" analogues report us coordinates of domains
+chromos <- "2R"
+usePandT <- "BR.LAM.m.anti.domains"
+sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
+sampleDomains <- with(DOMAIN.data.anti[[usePandT]][DOMAIN.data.anti[[usePandT]]$seqname == chromos,], IRanges(start, end))
+Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
+shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
+print(shareHKG)
+
+
+chromos <- "2R"
+usePandT <- "BR.LAM.m.domains"
+sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
+sampleDomains <- with(DOMAIN.data[[usePandT]][DOMAIN.data[[usePandT]]$seqname == chromos,], IRanges(start, end))
+Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
+shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
+print(shareHKG)
