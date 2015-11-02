@@ -28,6 +28,7 @@
 	library(Ringo)
 	library(tools)
 	library(plyr)
+	options(scipen = 999)
 
 	# libraries_string <- c("gplots", "ggplot2", "snapCGH", "cluster", "limma", "Vennerable", "BSgenome.Dmelanogaster.UCSC.dm3", "DESeq", "Ringo", "tools", "plyr")
 	# library(libraries_string, character.only=T)
@@ -1566,6 +1567,22 @@ for (i in names(Stat_BoxList)) {
 		print(paste(y, " in ", i, ". P-value: ", wilcoxStat$p.value, sep=""))
 	}
 }
+
+#  for (i in c("FB", "Glia", "NRN")) {
+#  	Stat_BoxList_3ds[[i]]$bind <- factor(Stat_BoxList_3ds[[i]]$bind, labels=c("not bind", "ambiguous", "bind"))
+#  }
+# Stat_BoxList_3ds$Kc167$bind <- factor(Stat_BoxList_3ds$Kc167$bind, labels=c("not bind", "bind"))
+for (i in names(Stat_BoxList_3ds)) {
+	for (y in levels(Stat_BoxList_3ds[[i]]$protein)) {
+		bind_vs_notbind <- wilcox.test(Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "bind", "expression"], Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "not bind", "expression"])
+		bind_vs_ambiguous <- wilcox.test(Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "bind", "expression"], Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "ambiguous", "expression"])
+		notbind_vs_ambiguous <- wilcox.test(Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "not bind", "expression"], Stat_BoxList_3ds[[i]][Stat_BoxList_3ds[[i]]$protein == y & Stat_BoxList_3ds[[i]]$bind == "ambiguous", "expression"])
+		print(paste("Bind vs not bind. ", y, " in ", i, ". P-value: ", bind_vs_notbind$p.value, sep=""))
+		print(paste("Bind vs ambiguous. ", y, " in ", i, ". P-value: ", bind_vs_ambiguous$p.value, sep=""))
+		print(paste("Not bind vs ambiguous. ", y, " in ", i, ". P-value: ", notbind_vs_ambiguous$p.value, sep=""))
+	}
+}
+
 
 
 # intersect domain data and combination with expression dataframe
