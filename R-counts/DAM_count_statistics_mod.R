@@ -41,6 +41,7 @@
 	sourceDir <- "/home/anton/backup/ludo-output" # location your RData files. You can specify the highest folder as it is possible. Searching runs recursively.
 	damIdLocation <- "/home/anton/data/DAM/RUN/damid_description.csv" # location your DamID-Description file
 	genesFilePath <- "/home/anton/backup/2013-07-09_Assigning_GATCs_to_Genes_(FBgn_IDs)/Drosophila_melanogaster.BDGP5.25.64_Genes_AP130708.txt"
+	HKGenesPath <- "/home/anton/backup/2013-07-09_Assigning_GATCs_to_Genes_(FBgn_IDs)/houskeeping_genes.csv"
 	exprDataDir <- "/home/anton/backup/input/ExpressionData"
 	outputGff <- "gff"	# output folder for gff in WD
 	outputWig <- "wig"	# output folder for wig in WD
@@ -1026,6 +1027,7 @@ for (listItem in 8:length(DATAs.norm.ave$DATA)) {
 			domains <- cbind(chr=HMM.data[[DATA.name]][[dataframe.name]]$chr[1], domains, stringsAsFactors=F)
 
 			antidomains <- domains[domains$value!=1,]
+			antidomains$value <- 1
 			antidomains <- cbind(antidomains, NA, NA, NA, NA, NA)
 			antidomains <- antidomains[,c(1,5,6,2,3,4,7,8,9)]
 			names(antidomains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
@@ -1270,6 +1272,7 @@ for (i in kc.list) {
 		kc_domains <- cbind(chr=y, kc_domains, stringsAsFactors=F)
 
 		kc_anti_domains <- kc_domains[kc_domains$value!=1,]
+		kc_anti_domains$value <- 1
 		kc_anti_domains <- cbind(kc_anti_domains, NA, NA, NA, NA, NA)
 		kc_anti_domains <- kc_anti_domains[,c(1,5,6,2,3,4,7,8,9)]
 		names(kc_anti_domains) <- c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")
@@ -1294,8 +1297,8 @@ for (i in kc.list) {
 	gff.file <- file.path(prefixDir, outputGff, outputDomain, paste(name, "gff", sep="."))
 	gff.file.anti <- file.path(prefixDir, outputGff, outputDomain, paste(name, "anti.gff", sep="."))
 
-	write.table(KC.DOMAIN[[name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
-	write.table(KC.DOMAIN.ANTI[[name]], file=gff.file.anti, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+	write.table(KC.DOMAIN[[kc.domain.name]], file=gff.file, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
+	write.table(KC.DOMAIN.ANTI[[kc.antidomain.name]], file=gff.file.anti, sep="\t", row.names=F, col.names=F, quote=F, dec=".", append=F)
 
 }
 DOMAIN.data <- append(DOMAIN.data, KC.DOMAIN)
@@ -1399,6 +1402,8 @@ CompareResults <- cbind(GATCs[Results$ColNumber, c("ID","chr","start","end")], d
 rownames(CompareResults) <- NULL
 return(CompareResults)
 }
+
+# Intersect with promoters only
 gatcG <- read.delim(gatcFile4Genes, header=T, sep="\t", stringsAsFactors=F)
 Genes <- read.delim(genesFilePath, header=T, as.is=T, dec=".")
 Genes <- Genes[Genes$chr %in% intersect(unique(Genes$chr), unique(gatcG$chr)),]
@@ -1408,6 +1413,13 @@ Genes[Genes$strand == "-", "start"] <- Genes[Genes$strand == "-", "end"]
 GATCvsGenes <- AssignGATCsToGenes(Genes, gatcG)
 idx.gatc.ori <- unlist(sapply(GATCvsGenes$ID, function(x) grep(x, gatcG$ID)))
 GATCvsGenes.List <- list()
+
+# Intersect with gene body
+GenesOrig <- read.delim(genesFilePath, header=T, as.is=T, dec=".")
+GATCvsGenesOrig <- AssignGATCsToGenes(GenesOrig, gatcG)
+idx.gatc.ori.body <- unlist(sapply(GATCvsGenesOrig$ID, function(x) grep(x, gatcG$ID)))
+GATCvsGenesOrig.List <- list()
+
 
 for (i in tissueExprSet) {
 	tissueSelection <- list.files(path=exprDataDir, pattern=paste(i, "_.*", sep=""), full.names=T)
@@ -1436,6 +1448,7 @@ for (i in tissueExprSet) {
 		names(exprResults) <- c("id", "baseMean")
 	}
 	tmpDF <- GATCvsGenes
+	tmpDF.Orig <- GATCvsGenesOrig
 	if (i == "Kc167") {
 		tempDATA <- DATA.part 
 	} else {
@@ -1443,7 +1456,7 @@ for (i in tissueExprSet) {
 	}
 	for (z in protein.bio.set) {
 		dataSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions.bio.set, collapse="|"), ")_(all|edge).*",sep=""), names(tempDATA), value=T, perl=T)
-		df <-tempDATA[, c("ID", dataSet)]
+		df <- tempDATA[, c("ID", dataSet)]
 		if (i == "Kc167") {
 			hmmSet <- grep(paste(i, "\\.", z, "\\.bound", sep=""), names(DATA.venn), value=T, perl=T)
 			hmm.df <- DATA.venn[, c(1:7, grep(hmmSet, names(DATA.venn)))]
@@ -1461,11 +1474,21 @@ for (i in tissueExprSet) {
 			df[,4][idx.hmm] <- hmm.df$target.filt
 		}
 		tmpDF <- cbind(tmpDF, df[idx.gatc.ori, c(2:4)])
+		tmpDF.Orig <- cbind(tmpDF.Orig, df[idx.gatc.ori.body, 2])
+		names(tmpDF.Orig)[ncol(tmpDF.Orig)] <- names(df)[2]
 	}
 	idx.fbgn.ori <- match(tmpDF$Genes.ID, exprResults$id)
 	tmpDF$expression <- exprResults$baseMean[idx.fbgn.ori]
 	GATCvsGenes.List[[i]] <- tmpDF
-	rm(rnaSeq, tmpDF)
+
+	tmpDF.Orig <- tmpDF.Orig[, -c(1:4, 6, 7)]
+	tmpDF.Orig <- ddply(tmpDF.Orig,"Genes.ID",numcolwise(mean, na.rm = TRUE))
+	for (colItem in c(2:ncol(tmpDF.Orig))) tmpDF.Orig[is.nan(tmpDF.Orig[,colItem]) == T, colItem] <- NA
+	idx.fbgn.ori.body <- match(tmpDF.Orig$Genes.ID, exprResults$id)
+	tmpDF.Orig$expression <- exprResults$baseMean[idx.fbgn.ori.body]
+	GATCvsGenesOrig.List[[i]] <- tmpDF.Orig
+
+	rm(rnaSeq, tmpDF, tmpDF.Orig)
 }
 
 # selector <- grep("WID\\.PC\\.(Late|Early)", names(HMM.data), value=T)
@@ -1516,7 +1539,6 @@ for (i in names(GATCvsGenes.List)) {
 		if (exists("dfBox") == F) {
 			dfBox <- data.frame("protein" = x, "bind" = c(target_one, target_zero_minus), "expression" = c(expr_one, expr_zero_minus))
 			dfBox3st <- data.frame("protein" = x, "bind" = c(target_one, target_zero, target_minus), "expression" = c(expr_one, expr_zero, expr_minus))
-
 		} else {
 			dfBox <- rbind(dfBox, data.frame("protein" = x, "bind" = c(target_one, target_zero_minus), "expression" = c(expr_one, expr_zero_minus)))
 			dfBox3st <- rbind(dfBox3st, data.frame("protein" = x, "bind" = c(target_one, target_zero, target_minus), "expression" = c(expr_one, expr_zero, expr_minus)))
@@ -1540,21 +1562,21 @@ for (i in names(GATCvsGenes.List)) {
 
 	# plot_box <- ggplot(aes(y = expression, x = bind, fill=bind), data = dfBox) + geom_boxplot() + facet_grid(. ~ protein) + theme(legend.position = "none") + theme(strip.text.x = element_text(size=25))
 
-	plot_box2 <- plot_box + theme(legend.position = "none") + theme(strip.text.x = element_text(size=25), axis.text=element_text(size=16), axis.title.x=element_blank(), axis.title.y=element_text(size=22)) + ylab("Genes log2 (RNA tag count + 1)")
-	plot_box2 + scale_x_continuous(label=c("TSS not bound", "TSS bound"))
+	# plot_box2 <- plot_box + theme(legend.position = "none") + theme(strip.text.x = element_text(size=25), axis.text=element_text(size=16), axis.title.x=element_blank(), axis.title.y=element_text(size=22)) + ylab("Genes log2 (RNA tag count + 1)")
+	# plot_box2 + scale_x_continuous(label=c("TSS not bound", "TSS bound"))
 
 
 	plot_box3st <- ggplot(aes(y = expression, x = bind, fill=bind), data = dfBox3st) + geom_boxplot() + labs(title=paste(i, " tissue.", "\nBioHMM output. 3 state interpretation.", sep="")) + facet_grid(. ~ protein)
 	plot_hist <- ggplot(dfBox, aes(x=expression, fill=bind)) + geom_histogram(colour="black", binwidth=0.3) + scale_y_sqrt() + facet_grid(bind ~ protein)
-	# pdf(file=file.path(boxplot_folder, paste("Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
-	# print(plot_box)
-	# dev.off()
-	# pdf(file=file.path(boxplot_folder, paste("3State_Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
-	# print(plot_box3st)
-	# dev.off()
-	# pdf(file=file.path(boxplot_folder, paste("Histogram_expression_data_with_binding_from_", i, ".pdf", sep="")), width=18, height=12)
-	# print(plot_hist)
-	# dev.off()
+	pdf(file=file.path(boxplot_folder, paste("Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
+	print(plot_box)
+	dev.off()
+	pdf(file=file.path(boxplot_folder, paste("3State_Boxplot_expression_data_with_binding_from_", i, ".pdf", sep="")), width=14, height=14)
+	print(plot_box3st)
+	dev.off()
+	pdf(file=file.path(boxplot_folder, paste("Histogram_expression_data_with_binding_from_", i, ".pdf", sep="")), width=18, height=12)
+	print(plot_hist)
+	dev.off()
 	rm(dfBox, dfBox3st)
 }
 
@@ -1587,19 +1609,193 @@ for (i in names(Stat_BoxList_3ds)) {
 
 # intersect domain data and combination with expression dataframe
 # Genes variable report us expression data, DOMAIN.data and COMPARE.data as well as their "anti" analogues report us coordinates of domains
-chromos <- "2R"
-usePandT <- "BR.LAM.m.anti.domains"
-sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
-sampleDomains <- with(DOMAIN.data.anti[[usePandT]][DOMAIN.data.anti[[usePandT]]$seqname == chromos,], IRanges(start, end))
-Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
-shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
-print(shareHKG)
+# chromos <- "2R"
+# usePandT <- "BR.LAM.m.anti.domains"
+# sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
+# sampleDomains <- with(DOMAIN.data.anti[[usePandT]][DOMAIN.data.anti[[usePandT]]$seqname == chromos,], IRanges(start, end))
+# Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
+# shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
+# print(shareHKG)
 
 
-chromos <- "2R"
-usePandT <- "BR.LAM.m.domains"
-sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
-sampleDomains <- with(DOMAIN.data[[usePandT]][DOMAIN.data[[usePandT]]$seqname == chromos,], IRanges(start, end))
-Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
-shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
-print(shareHKG)
+# chromos <- "2R"
+# usePandT <- "BR.LAM.m.domains"
+# sampleGenes <- with(Genes[Genes$chr == chromos,], IRanges(start, end))
+# sampleDomains <- with(DOMAIN.data[[usePandT]][DOMAIN.data[[usePandT]]$seqname == chromos,], IRanges(start, end))
+# Genes_vs_Domains <- as.data.frame(intersect(sampleGenes, sampleDomains))
+# shareHKG <- paste(round((nrow(Genes_vs_Domains)/nrow(Genes))*100, digits=2), "%", sep="")
+# print(shareHKG)
+
+#Make Scatter plots between gene expression and DamId targets
+
+# MakeScatterPlotsExpressionDamID <- function(DataList, tissueRange, label) {
+# 	for (i in tissueRange) {
+# 		selectColumns <- grep(paste(i, ".*norm\\.ave", sep="") ,names(DataList[[i]]), perl=T)
+# 		ifelse(!dir.exists(file.path(prefixDir, outputBio, outputScttr)), dir.create(file.path(prefixDir, outputBio, outputScttr), showWarnings=FALSE), FALSE)
+# 		for (y in selectColumns) {
+# 			scatterName <- sub(paste("(",i, "\\.)(LAM|HP1|PC).*", sep=""), "\\1\\2", names(DataList[[i]][y]))
+# 			Cor.P <- round(cor(DataList[[i]][,y], DataList[[i]][,ncol(DataList[[i]])], method="pearson", use="pairwise.complete.obs"), digits=2)
+# 			Cor.S <- round(cor(DataList[[i]][,y], DataList[[i]][,ncol(DataList[[i]])], method="spearman", use="pairwise.complete.obs"), digits=2)
+# 			# plot(x=DataList[[i]][,y], y=log2(DataList[[i]][,ncol(DataList[[i]])]), cex=0.3, xlab=scatterName, ylab="Genes expression value log2(RNA tag count)", text(x=max(DataList[[i]][,y], na.rm=T)*0.85, y=max(log2(DataList[[i]][,ncol(DataList[[i]])]), na.rm=T)*0.8, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+# 			scatter_plot_one <- ggplot(DataList[[i]], aes(DataList[[i]][,y], log2(DataList[[i]][,ncol(DataList[[i]])])))+geom_point(alpha=1/10, colour="red", size=3) + xlab(scatterName) + ylab("Genes expression value log2(RNA tag count)") + geom_text(data = data.frame(), size = 4, hjust=0, aes(max(DataList[[i]][,y], na.rm=T)*0.65, max(log2(DataList[[i]][,ncol(DataList[[i]])]), na.rm=T)*0.9, label = c(paste("Pearson.Cor = ", Cor.P, "\n\n", sep=""), paste("Spearman.Cor = ", Cor.S, sep="")))) + theme_bw()
+# 			bmp(filename=file.path(prefixDir, outputBio, outputScttr, paste("Scatter_plots_", scatterName, "_vs_expression_values. Type_", label,".bmp", sep="")), width=800, height=800, units = "px")
+# 			par(mfrow=c(1, 1))
+# 			par(mai=c(1.5, 1.5, 0.7, 0.5))
+# 			par(cex=1.5)
+# 			print(scatter_plot_one)
+# 			dev.off()
+# 			rm(scatter_plot_one)
+# 		}
+# 	}
+# }
+
+# MakeScatterPlotsExpressionDamID(DataList=GATCvsGenes.List, tissueRange=c("BR", "FB", "Kc167"), label="by_promotors")
+# MakeScatterPlotsExpressionDamID(DataList=GATCvsGenesOrig.List, tissueRange=c("BR", "FB", "Kc167"), label="by_full_gene_body")
+
+for (i in c("BR", "FB", "Kc167")) {
+	selectColumns <- grep(paste(i, ".*norm\\.ave", sep="") ,names(GATCvsGenes.List[[i]]), perl=T)
+	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputScttr)), dir.create(file.path(prefixDir, outputBio, outputScttr), showWarnings=FALSE), FALSE)
+	for (y in selectColumns) {
+		scatterName <- sub(paste("(",i, "\\.)(LAM|HP1|PC).*", sep=""), "\\1\\2", names(GATCvsGenes.List[[i]][y]))
+		Cor.P <- round(cor(GATCvsGenes.List[[i]][,y], GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])], method="pearson", use="pairwise.complete.obs"), digits=2)
+		Cor.S <- round(cor(GATCvsGenes.List[[i]][,y], GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])], method="spearman", use="pairwise.complete.obs"), digits=2)
+		# plot(x=GATCvsGenes.List[[i]][,y], y=log2(GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])]), cex=0.3, xlab=scatterName, ylab="Genes expression value log2(RNA tag count)", text(x=max(GATCvsGenes.List[[i]][,y], na.rm=T)*0.85, y=max(log2(GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])]), na.rm=T)*0.8, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+		scatter_plot_one <- ggplot(GATCvsGenes.List[[i]], aes(GATCvsGenes.List[[i]][,y], log2(GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])])))+geom_point(alpha=1/10, colour="red", size=3) + xlab(scatterName) + ylab("Genes expression value log2(RNA tag count)") + geom_text(data = data.frame(), size = 4, hjust=0, aes(max(GATCvsGenes.List[[i]][,y], na.rm=T)*0.65, max(log2(GATCvsGenes.List[[i]][,ncol(GATCvsGenes.List[[i]])]), na.rm=T)*0.9, label =c(paste("Pearson.Cor = ", Cor.P, "\n\n", sep=""), paste("Spearman.Cor = ", Cor.S, sep="")))) + theme_bw()
+		bmp(filename=file.path(prefixDir, outputBio, outputScttr, paste("Scatter_plots_", scatterName, "_vs_expression_values. Type_by_promotors.bmp", sep="")), width=800, height=800, units = "px")
+		par(mfrow=c(1, 1))
+		par(mai=c(1.5, 1.5, 0.7, 0.5))
+		par(cex=1.5)
+		print(scatter_plot_one)
+		rm(Cor.P, Cor.S, scatter_plot_one)
+		dev.off()
+	}
+}
+
+for (i in c("BR", "FB", "Kc167")) {
+	selectColumns <- grep(paste(i, ".*norm\\.ave", sep="") ,names(GATCvsGenesOrig.List[[i]]), perl=T)
+	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputScttr)), dir.create(file.path(prefixDir, outputBio, outputScttr), showWarnings=FALSE), FALSE)
+	for (y in selectColumns) {
+		scatterName <- sub(paste("(",i, "\\.)(LAM|HP1|PC).*", sep=""), "\\1\\2", names(GATCvsGenesOrig.List[[i]][y]))
+		Cor.P <- round(cor(GATCvsGenesOrig.List[[i]][,y], GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])], method="pearson", use="pairwise.complete.obs"), digits=2)
+		Cor.S <- round(cor(GATCvsGenesOrig.List[[i]][,y], GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])], method="spearman", use="pairwise.complete.obs"), digits=2)
+		# plot(x=GATCvsGenesOrig.List[[i]][,y], y=log2(GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])]), cex=0.3, xlab=scatterName, ylab="Genes expression value log2(RNA tag count)", text(x=max(GATCvsGenesOrig.List[[i]][,y], na.rm=T)*0.85, y=max(log2(GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])]), na.rm=T)*0.8, labels=c(paste("r = ", Cor.P, "\n\n", sep=""), paste("s = ", Cor.S, sep=""))))
+		scatter_plot_one <- ggplot(GATCvsGenesOrig.List[[i]], aes(GATCvsGenesOrig.List[[i]][,y], log2(GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])])))+geom_point(alpha=1/10, colour="red", size=3) + xlab(scatterName) + ylab("Genes expression value log2(RNA tag count)") + geom_text(data = data.frame(), size = 4, hjust=0, aes(max(GATCvsGenesOrig.List[[i]][,y], na.rm=T)*0.65, max(log2(GATCvsGenesOrig.List[[i]][,ncol(GATCvsGenesOrig.List[[i]])]), na.rm=T)*0.9, label =c(paste("Pearson.Cor = ", Cor.P, "\n\n", sep=""), paste("Spearman.Cor = ", Cor.S, sep="")))) + theme_bw()
+		bmp(filename=file.path(prefixDir, outputBio, outputScttr, paste("Scatter_plots_", scatterName, "_vs_expression_values. Type_by_full_gene_body.bmp", sep="")), width=800, height=800, units = "px")
+		par(mfrow=c(1, 1))
+		par(mai=c(1.5, 1.5, 0.7, 0.5))
+		par(cex=1.5)
+		print(scatter_plot_one)
+		rm(Cor.P, Cor.S, scatter_plot_one)
+		dev.off()
+	}
+}
+
+
+SplitDfFromColToRow <- function (data) {
+	if (ncol(data) %% 2 == 0) {
+		ColCounts <- ncol(data) / 2
+		dfTempList <- as.list(rnorm(ColCounts))
+		names(dfTempList) <- paste("a", 1:length(dfTempList), sep = "")
+		for (envDF in c(1:ColCounts)) {
+			tempDF <- data[,c(envDF*2-1, envDF*2)]
+			tempDF$tissue <- sub("([a-zA-Z0-9]+)\\..*target$", "\\1", names(tempDF)[1], perl=T)
+			names(tempDF)[1:2] <- c("bound", "expression")
+			dfTempList[[names(dfTempList)[envDF]]] <- tempDF
+			rm(tempDF)
+		}
+		return(rbind.fill(dfTempList))
+	}
+}
+# Find common GATC's by protein
+for (protein in proteinIntersectSet){
+	for (i in names(GATCvsGenes.List)) {
+		vecSel <- grep(paste(i, "\\.", protein, "\\..*target$", sep=""), names(GATCvsGenes.List[[i]]), perl=T, value=T)
+		if (exists("vecSelnames") == T) {
+			vecSelnames <- c(vecSelnames, vecSel, paste(i, "expression", sep="_"))
+		} else {
+			vecSelnames <- c(vecSel, paste(i, "expression", sep="_"))	
+		}
+		if (exists("dfSel") == T) {
+			dfSel <- cbind(dfSel, data.frame(vecSel=GATCvsGenes.List[[i]][[vecSel]], "expression"=GATCvsGenes.List[[i]][, ncol(GATCvsGenes.List[[i]])]))
+		} else {
+			dfSel <- data.frame(vecSel=GATCvsGenes.List[[i]][[vecSel]], "expression"=GATCvsGenes.List[[i]][, ncol(GATCvsGenes.List[[i]])])
+		}
+	}
+	colnames(dfSel) <- vecSelnames
+	setOfcolumns <- grep(".*target$", names(dfSel), perl=T)
+	for (column in setOfcolumns) {
+		if (length(grep("-1", unique(dfSel[, column]), value=T)) == 1) dfSel[dfSel[,column] == -1 & !is.na(dfSel[, column]), column] <- 0 
+	}
+	for (y in c(2:5)) {
+		if (y == 2) {
+			columns_list <- combn(setOfcolumns, y, simplify=F)
+		} else {
+			columns_list <- append(columns_list, combn(setOfcolumns, y, simplify=F))
+		}
+	}
+	for (column_item_list in columns_list) {
+		column_item <- unlist(column_item_list)
+		if (length(column_item) == 2) {
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1, sort(c(column_item, column_item + 1))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0, sort(c(column_item, column_item + 1))]
+		} else if (length(column_item) == 3) {
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1 & dfSel[, column_item[3]] == 1, sort(c(column_item, column_item + 1))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0 & dfSel[, column_item[3]] == 0, sort(c(column_item, column_item + 1))]
+		} else if (length(column_item) == 4) {
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1 & dfSel[, column_item[3]] == 1 & dfSel[, column_item[4]] == 1, sort(c(column_item, column_item + 1))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0 & dfSel[, column_item[3]] == 0 & dfSel[, column_item[4]] == 0, sort(c(column_item, column_item + 1))]
+		} else if (length(column_item) == 5) {
+			dfCompare <- dfSel
+		} else {
+			print("")
+		}
+		if (length(column_item) >= 2 & length(column_item) != 5) {
+			dfPlus <- na.omit(dfPlus)
+			dfZero <- na.omit(dfZero)
+			dfCompare <- rbind(dfPlus, dfZero)
+		} else {
+			dfCompare <- na.omit(dfCompare)
+		}
+		dfCompare <- SplitDfFromColToRow(dfCompare)
+		dfCompare$bound <- factor(dfCompare$bound, labels=c("Not bound", "Bound"))
+		dfCompare$expression <- log2(dfCompare$expression + 1)
+		dfCompare$tissue <- as.factor(dfCompare$tissue)
+		boxplot_compare_folder <- "Boxplot_by_common_domains"
+		protein_category_folder <- protein
+		ifelse(!dir.exists(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder)), dir.create(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder), showWarnings=FALSE), FALSE)
+		ifelse(!dir.exists(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, protein_category_folder)), dir.create(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, protein_category_folder), showWarnings=FALSE), FALSE)
+		plot4 <- ggplot(aes(y=expression, x=bound, fill=bound), data=dfCompare) + geom_boxplot() + labs(title=paste("Gene expression in the", protein, "domains common for tissues", paste(levels(dfCompare$tissue), collapse=", "), sep=" ")) + facet_grid(. ~ tissue)
+		pdf(file=file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, protein_category_folder, paste(paste("Gene expression in the", protein, "domains common for tissues", paste(levels(dfCompare$tissue), collapse=" vs "), sep=" "), "pdf", sep=".")), width=14, height=14)
+		print(plot4)
+		dev.off()
+	}
+	rm(dfSel, vecSelnames, columns_list)
+}
+
+# Count housekeeping genes located in various combinations of constitutive «anti»domains
+HKGenes <- read.csv(HKGenesPath, stringsAsFactors=F)
+HKGenes <- GATCvsGenes[GATCvsGenes$Genes.ID %in% HKGenes$ID,]
+HKGenes <- cbind(HKGenes[, c("Genes.ID", "chr", "TSS")], HKGenes[, "TSS"])
+names(HKGenes) <- c("id", "chr", "start", "end")
+for (comb in names(COMPARE.data.antidomains)) {
+	a1 <- COMPARE.data.antidomains[[comb]][, c("seqname", "start", "end")]
+	HKRanges <- with(HKGenes, IRanges(start, end))
+	combRanges <- with(a1, IRanges(start, end))
+	a2 <- as.data.frame(intersect(HKRanges, combRanges))
+	HKGenesArea <- as.character(HKGenes[HKGenes$start %in% a2$start, "id"])
+	stringName <- gsub("(?!M)[a-z\\._0-9MHT]*?\\.anti\\.domains", "", comb, perl=T)
+	if (exists("HKCount") == T & exists("HKGenesFile") == T) {
+		HKCount <-rbind(HKCount, data.frame("stringBetween"=stringName, "count"=length(HKGenesArea)))
+		HKGenesFile[[stringName]] <- data.frame(Genes=HKGenesArea, stringsAsFactors=F)
+	} else {
+		HKCount <- data.frame("stringBetween"=stringName, "count"=length(HKGenesArea))
+		HKGenesFile <- setNames(list(x=data.frame(Genes=HKGenesArea, stringsAsFactors=F)), stringName)
+	}
+}
+write.table(HKCount, file=file.path(prefixDir, outputBio, "Housekeepeng_Genes_counts.csv"), sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F, eol="\r\n")
+save(HKGenesFile, file=file.path(prefixDir, outputBio, "Housekeepeng_Genes_list.RData"))
+png(filename=file.path(prefixDir, outputBio, "HouseKeepengGenes statistics.png"), width=800, height=800)
+plot(HKCount$count)
+dev.off()
+
+rm(HKCount, HKGenesFile)
