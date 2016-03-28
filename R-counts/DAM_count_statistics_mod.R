@@ -66,12 +66,9 @@
 	writeTemp <- T		# use this option if you need to get the intermediate files, default "T"
 	needSomeFiles <- F	# if need calculate only some files from source list, default "F"
 	useSomeFiles <- c(9:16)	# the region of files which need calculate
-	tissue.bio.set <- c("BR", "FB", "Glia", "NRN", "Kc167") # Part of tissies from all
-	protein.bio.set <- c("LAM", "HP1", "PC") # Part of protein from all
-	conditions.bio.set <- c("m", "m_25mkM4HT", "mf_min", "std")
-	tissueExprSet <- c("BR", "FB", "Glia", "NRN", "Kc167")
-	tissueIntersectSet <- c("BR", "FB", "Glia", "NRN", "Kc167")
-	proteinIntersectSet <- c("LAM", "HP1", "PC")
+	tissue_bio_set <- c("BR", "FB", "Glia", "NRN", "Kc167") # Part of tissies from all
+	protein_bio_set <- c("LAM", "HP1", "PC") # Part of protein from all
+	conditions_bio_set <- c("m", "m_25mkM4HT", "mf_min", "std")
 
 
 # Create folders
@@ -538,7 +535,7 @@ MakeHeatmapToPdf <- function(input, item1, item2, vs_name, method) {
 HeatmapBySelection <- function(dataSet, corrMethod, use.opt) {  
 	for (m in corrMethod) {
 		log <- list()
-		bio.set <- list(TB = tissue.bio.set, PB = protein.bio.set)
+		bio.set <- list(TB = tissue_bio_set, PB = protein_bio_set)
 		for (element.set in bio.set) {
 			for (tHa in element.set) {
 				for (tHb in element.set) {
@@ -1163,7 +1160,7 @@ MakeReportDomainsSize <- function(inputData, dscr, includeHet=T) {
 
 
 IntersectDomain <- function(inputData, Tset, Pset, dscr, ScoreValue) {
-	DOMAIN.data.part <- inputData[grep(paste("(", paste(tissue.bio.set, collapse="|"), ")\\.(", paste(protein.bio.set, collapse="|"), ")\\.(", paste(conditions.bio.set, collapse="|"), ")\\..*", sep="") ,names(inputData), perl=T)]
+	DOMAIN.data.part <- inputData[grep(paste("(", paste(tissue_bio_set, collapse="|"), ")\\.(", paste(protein_bio_set, collapse="|"), ")\\.(", paste(conditions_bio_set, collapse="|"), ")\\..*", sep="") ,names(inputData), perl=T)]
 	COMPARE.data <- list()
 	for (i in c(2:5)) {
 		if (i == 2) {
@@ -1255,7 +1252,7 @@ for (i in kc.list) {
 		DATA.venn[[kc.name]] <- kc[[x]][compare.vector]
 	}
 }
-DATA.middle.part <- cbind(DATAs.norm.ave$DATA[,c(1:7)], DATAs.norm.ave$DATA[,grep(paste("(", paste(tissue.bio.set, collapse="|"), ")\\.(", paste(protein.bio.set, collapse="|"), ")\\.(", paste(conditions.bio.set, collapse="|"), ")_(edge|all).*", sep="") ,names(DATAs.norm.ave$DATA), perl=T, value=T)])
+DATA.middle.part <- cbind(DATAs.norm.ave$DATA[,c(1:7)], DATAs.norm.ave$DATA[,grep(paste("(", paste(tissue_bio_set, collapse="|"), ")\\.(", paste(protein_bio_set, collapse="|"), ")\\.(", paste(conditions_bio_set, collapse="|"), ")_(edge|all).*", sep="") ,names(DATAs.norm.ave$DATA), perl=T, value=T)])
 
 DATA.part <- cbind(DATA.middle.part, DATA.kc)
 print("Run heatmap generate. Many NULL message!")
@@ -1282,11 +1279,11 @@ for (i in names(DATA.middle.part)[8:ncol(DATA.middle.part)]) {
 	rm(target.df)
 }
 print("Make Venn Diagram")
-for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
-for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*\\.(LAM|HP1).*bound", sep=""), v1=t.s, v2="LAM, HP1")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste(".*\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB, NRN, Glia")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste("(Kc167|BR|FB)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.venn, set=paste("(BR|NRN|Glia)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="BR, NRN, Glia")
+for (t.s in tissue_bio_set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
+for (t.s in tissue_bio_set)	MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*\\.(LAM|HP1).*bound", sep=""), v1=t.s, v2="LAM, HP1")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.venn, set=paste(".*\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB, NRN, Glia")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.venn, set=paste("(Kc167|BR|FB)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.venn, set=paste("(BR|NRN|Glia)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="BR, NRN, Glia")
 
 # Count area domain from whole genome
 #####################################
@@ -1398,9 +1395,9 @@ print("End of bio-analyzing")
 
 # Domain intersection
 
-COMPARE.data <- IntersectDomain(inputData=DOMAIN.data, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="constitutive", ScoreValue=1)
-COMPARE.data.filt <- IntersectDomain(inputData=DOMAIN.data.filt, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="filt", ScoreValue=1)
-COMPARE.data.antidomains <- IntersectDomain(inputData=DOMAIN.data.anti, Tset=tissueIntersectSet, Pset=proteinIntersectSet, dscr="anti", ScoreValue=-1)
+COMPARE.data <- IntersectDomain(inputData=DOMAIN.data, Tset=tissue_bio_set, Pset=protein_bio_set, dscr="constitutive", ScoreValue=1)
+COMPARE.data.filt <- IntersectDomain(inputData=DOMAIN.data.filt, Tset=tissue_bio_set, Pset=protein_bio_set, dscr="filt", ScoreValue=1)
+COMPARE.data.antidomains <- IntersectDomain(inputData=DOMAIN.data.anti, Tset=tissue_bio_set, Pset=protein_bio_set, dscr="anti", ScoreValue=-1)
 
 # Write stistics from compared data
 MakeReportDomainsSize(COMPARE.data, "compare_constitutive")
@@ -1453,7 +1450,7 @@ idx.gatc.ori.body <- unlist(sapply(GATCvsGenesOrig$ID, function(x) grep(x, gatcG
 GATCvsGenesOrig.List <- list()
 
 dfExpression.List <- list()
-for (i in tissueExprSet) {
+for (i in tissue_bio_set) {
 	tissueSelection <- list.files(path=exprDataDir, pattern=paste(i, "_.*", sep=""), full.names=T)
 	if (length(tissueSelection) > 1) {
 		tissueNames <- file_path_sans_ext(list.files(path=exprDataDir, pattern=paste(i, "_.*", sep="")))
@@ -1485,10 +1482,10 @@ for (i in tissueExprSet) {
 	if (i == "Kc167") {
 		tempDATA <- DATA.part 
 	} else {
-		tempDATA <- DATAs.norm.ave$DATA
+		tempDATA <- cbind(DATAs.norm.ave$DATA, DATAs.ave$DATA[,c(8:ncol(DATAs.ave$DATA))])
 	}
-	for (z in protein.bio.set) {
-		dataSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions.bio.set, collapse="|"), ")_(all|edge).*",sep=""), names(tempDATA), value=T, perl=T)
+	for (z in protein_bio_set) {
+		dataSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions_bio_set, collapse="|"), ")_(all|edge).*",sep=""), names(tempDATA), value=T, perl=T)
 		df <- tempDATA[, c("ID", dataSet)]
 		if (i == "Kc167") {
 			hmmSet <- grep(paste(i, "\\.", z, "\\.bound", sep=""), names(DATA.venn), value=T, perl=T)
@@ -1496,17 +1493,17 @@ for (i in tissueExprSet) {
 			hmm.df <- hmm.df[!(is.na(hmm.df[,ncol(hmm.df)])),]
 			names(hmm.df)[ncol(hmm.df)] <- "target"
 		} else {
-			hmmSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions.bio.set, collapse="|"), ")$",sep=""), names(HMM.data), value=T, perl=T)
+			hmmSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions_bio_set, collapse="|"), ")$",sep=""), names(HMM.data), value=T, perl=T)
 			hmm.df <- rbind.fill(HMM.data[[hmmSet]])
 		}
 		idx.hmm <- which(df$ID %in% hmm.df$ID)
 		df <- cbind(df, as.data.frame(matrix(NA, ncol=2, nrow=nrow(df))))
-		names(df)[3:4] <- paste(hmmSet, c("target", "target.filt"), sep="_")
-		df[,3][idx.hmm] <- hmm.df$target
+		names(df)[(ncol(df)-1):ncol(df)] <- paste(hmmSet, c("target", "target.filt"), sep="_")
+		df[,(ncol(df)-1)][idx.hmm] <- hmm.df$target
 		if (i != "Kc167") {
-			df[,4][idx.hmm] <- hmm.df$target.filt
+			df[,ncol(df)][idx.hmm] <- hmm.df$target.filt
 		}
-		tmpDF <- cbind(tmpDF, df[idx.gatc.ori, c(2:4)])
+		tmpDF <- cbind(tmpDF, df[idx.gatc.ori, c(2:ncol(df))])
 		tmpDF.Orig <- cbind(tmpDF.Orig, df[idx.gatc.ori.body, 2])
 		names(tmpDF.Orig)[ncol(tmpDF.Orig)] <- names(df)[2]
 	}
@@ -1548,7 +1545,7 @@ for (i in tissueExprSet) {
 Stat_BoxList <- list()
 Stat_BoxList_3ds <- list()
 for (i in names(GATCvsGenes.List)) {
-	for (x in protein.bio.set) {
+	for (x in protein_bio_set) {
 		target.pos <- grep(paste(".*", x, ".*target$", sep=""), names(GATCvsGenes.List[[i]]), value=T)
 		expr.pos <- ncol(GATCvsGenes.List[[i]])
 		vectorPlus <- GATCvsGenes.List[[i]][[target.pos]] == 1 & !(is.na(GATCvsGenes.List[[i]][[target.pos]]))
@@ -1607,8 +1604,6 @@ for (i in names(GATCvsGenes.List)) {
 
 # Count P-value by wilcox-text
 
-# by(Stat_BoxList$BR$expression, INDICES = list(Stat_BoxList$BR$protein, Stat_BoxList$BR$bind), wilcox.test)
-
 for (i in names(Stat_BoxList)) {
 	for (y in levels(Stat_BoxList[[i]]$protein)) {
 		wilcoxStat <- wilcox.test(Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "bind", "expression"], Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "not bind", "expression"])
@@ -1645,7 +1640,6 @@ for (i in c("BR", "FB", "Kc167")) {
 		dev.off()
 	}
 }
- # + xlab(paste(i, "DamID values", sep=" ")) + ylab("Genes expression value log2(RNA tag count)")
 for (i in c("BR", "FB", "Kc167")) {
 	selectColumns <- grep(paste(i, ".*norm\\.ave", sep="") ,names(GATCvsGenesOrig.List[[i]]), perl=T)
 	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputScttr)), dir.create(file.path(prefixDir, outputBio, outputScttr), showWarnings=FALSE), FALSE)
@@ -1684,7 +1678,7 @@ SplitDfFromColToRow <- function (data) {
 	}
 }
 Stat_ProtList <- list()
-for (protein in proteinIntersectSet){
+for (protein in protein_bio_set){
 	for (i in names(GATCvsGenes.List)) {
 		vecSel <- grep(paste(i, "\\.", protein, "\\..*target$", sep=""), names(GATCvsGenes.List[[i]]), perl=T, value=T)
 		if (exists("vecSelnames") == T) {
@@ -1761,7 +1755,7 @@ Stat_TissList <- list()
 for (i in names(GATCvsGenes.List)) {
 	
 	# Select column with one tissue and all three proteins and then add expression value from this tissue
-	for (protein in proteinIntersectSet){
+	for (protein in protein_bio_set){
 		vecSel <- grep(paste(i, "\\.", protein, "\\..*target$", sep=""), names(GATCvsGenes.List[[i]]), perl=T, value=T)
 		if (exists("vecSelnames") == T) {
 			vecSelnames <- c(vecSelnames, vecSel)
@@ -1973,13 +1967,13 @@ dev.off()
 idx.gatc.venn <- unlist(sapply(GATCvsGenes$ID, function(x) grep(x, DATA.venn$ID)))
 
 DATA.tss.venn <- DATA.venn[idx.gatc.venn, ]
-for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.tss.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
-for (t.s in tissue.bio.set)	MakeVennDiagram(x=DATA.tss.venn, set=paste(t.s,".*\\.(LAM|HP1).*bound", sep=""), v1=t.s, v2="LAM, HP1")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.tss.venn, set=paste(".*\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB, NRN, Glia")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.tss.venn, set=paste("(Kc167|BR|FB)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB")
-for (p.s in protein.bio.set) MakeVennDiagram(x=DATA.tss.venn, set=paste("(BR|NRN|Glia)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="BR, NRN, Glia")
+for (t.s in tissue_bio_set)	MakeVennDiagram(x=DATA.tss.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
+for (t.s in tissue_bio_set)	MakeVennDiagram(x=DATA.tss.venn, set=paste(t.s,".*\\.(LAM|HP1).*bound", sep=""), v1=t.s, v2="LAM, HP1")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.tss.venn, set=paste(".*\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB, NRN, Glia")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.tss.venn, set=paste("(Kc167|BR|FB)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="Kc167, BR, FB")
+for (p.s in protein_bio_set) MakeVennDiagram(x=DATA.tss.venn, set=paste("(BR|NRN|Glia)\\.", p.s, ".*bound", sep=""), v1=p.s, v2="BR, NRN, Glia")
 
-# Make scatter plots fro expression values
+# Make scatter plots from expression values
 ##########################################
 
 for (i in c("BR", "FB")) {
@@ -2067,7 +2061,7 @@ for (i in c("BR", "NRN", "Glia")) {
 
 # Compare DAMId data in BR vs Glia&NRN from LAM&PC&HP1
 ######################################################
-for (i in protein.bio.set) {
+for (i in protein_bio_set) {
 	for (y in c("NRN", "Glia")) {
 		brainName <- grep(paste("BR\\.", i, "*", sep=""), names(DATAs.norm.ave$DATA), perl=T, value=T)
 		versusName <- grep(paste(y, "\\.", i, "*", sep=""), names(DATAs.norm.ave$DATA), perl=T, value=T)
@@ -2120,7 +2114,7 @@ outputBar <- "Report domains size"
 ifelse(!dir.exists(file.path(prefixDir, outputBio, outputBar)), dir.create(file.path(prefixDir, outputBio, outputBar), showWarnings=FALSE), FALSE)
 
 Bar_List <- list()
-for (i in protein.bio.set) {
+for (i in protein_bio_set) {
 	r1_names <- grep(paste(".*", i, ".*", sep=""), fileOne$Item.name, perl=T, value=T)
 	r1_tnames <- sub("([a-zA-Z0-9]*)\\..*$", "\\1", r1_names, perl=T)
 	r1_num <- grep(paste(".*", i, ".*", sep=""), fileOne$Item.name)
@@ -2129,16 +2123,16 @@ for (i in protein.bio.set) {
 	y.coord <- r1_ratio + 2
 	Bar_List[[i]] <- ggplot(fileOne[r1_num,], aes(Item.name, Ratio, fill=Item.name)) + geom_bar(stat="identity") + coord_cartesian(ylim = c(0,100)) + labs(title=paste(i, "domains size report", sep=" ")) + xlab("Tissues") + ylab("Domains size ratio") + scale_x_discrete(breaks=r1_names, labels=r1_tnames) + theme_bw() + theme(plot.title=element_text(size=26), axis.title.x=element_text(size=20), axis.title.y=element_text(size=20), axis.text.x=element_text(size=14), axis.text.y=element_text(size=14), legend.position = "none") + annotate("text", x = x.coord, y = y.coord, label = r1_ratio, size=5)
 }
-pdf(file=file.path(prefixDir, outputBio, outputBar, paste("Bar_report", paste(protein.bio.set, collapse=", "), "constitutive_domains_size_from_different_tissues.pdf", sep="_")), width=14, height=14)
+pdf(file=file.path(prefixDir, outputBio, outputBar, paste("Bar_report", paste(protein_bio_set, collapse=", "), "constitutive_domains_size_from_different_tissues.pdf", sep="_")), width=14, height=14)
 print(multiplot(plotlist=Bar_List, cols=3, layout=matrix(c(1:4), ncol = 2, nrow = 2, byrow=T)))
 dev.off()
 
 fileTwo <- read.csv(file.path(workDir, prefixDir, outputBio, "Report_about_compare_constitutive_without_Heterochromatin_domains_part_from_genome_D.melanogaster.csv"), sep=";")
 fileTwo <- fileTwo[order(fileTwo$Item.name),]
 Bar_List2 <- list()
-for (tset in list(A=tissue.bio.set, B=c("BR", "FB", "Kc167"), C=c("BR", "Glia", "NRN"))) {
+for (tset in list(A=tissue_bio_set, B=c("BR", "FB", "Kc167"), C=c("BR", "Glia", "NRN"))) {
 	if (exists("r2_df") == T) rm(r2_df)
-	for (i in protein.bio.set) {
+	for (i in protein_bio_set) {
 		sample <- paste(paste(paste(tset, "\\.", i, "\\.[a-zA-Z0-9_]*\\.domains", sep=""), collapse="_vs_"), "$", sep="")
 		if (exists("r2_df") == T) {
 				r2_df <- rbind(r2_df, fileTwo[grep(sample, fileTwo$Item.name, perl=T),])
@@ -2156,7 +2150,30 @@ for (tset in list(A=tissue.bio.set, B=c("BR", "FB", "Kc167"), C=c("BR", "Glia", 
 	Bar_List2[[barlist_item_name]] <- ggplot(r2_df, aes(Item.name, Ratio, fill=Item.name)) + geom_bar(stat="identity") + coord_cartesian(ylim = c(0,100)) + labs(title=paste("Conservative", paste(tset, collapse=", "), "domains size report", sep=" ")) + xlab(paste(tset, collapse=", ")) + ylab("Conservative domains size ratio") + scale_x_discrete(breaks=r2_names, labels=r2_pnames) + theme_bw() + theme(plot.title=element_text(size=15), axis.title.x=element_text(size=20), axis.title.y=element_text(size=20), axis.text.x=element_text(size=14), axis.text.y=element_text(size=14), legend.position = "none") + annotate("text", x = x.coord, y = y.coord, label = r2_ratio, size=5)
 	rm(r2_df)
 }
-pdf(file=file.path(prefixDir, outputBio, outputBar, paste("Bar_report", paste(protein.bio.set, collapse=", "), "conservative_domains_size_from_", paste(tset, collapse=","), ".pdf", sep="_")), width=14, height=14)
+pdf(file=file.path(prefixDir, outputBio, outputBar, paste("Bar_report", paste(protein_bio_set, collapse=", "), "conservative_domains_size_from_", paste(tset, collapse=","), ".pdf", sep="_")), width=14, height=14)
 print(multiplot(plotlist=Bar_List2, cols=3, layout=matrix(c(1:4), ncol = 2, nrow = 2, byrow=T)))
 dev.off()
 
+# Make ScatterPlots between Averaged BR/FB DamID data and BR/FB expression dataframe
+for (i in c("BR", "FB")) {
+	s1 <- GATCvsGenes.List[[i]]
+	for (y in protein_bio_set) {
+		ave.s <- s1[, grep(paste(i, "\\.", y, "\\.(", paste(conditions_bio_set, collapse="|"), ")_(all|edge)\\.ave$", sep=""), names(s1), perl=T)]
+		expr.s <- s1[, ncol(s1)]
+		ave.s <- log2(ave.s + 1)
+		expr.s <- log2(expr.s + 1)
+		df.s0 <- data.frame(val1=ave.s, val2=expr.s)
+		# colnames(df.s0) <- c(paste(i, y, "DamID_averaged_data", sep="_"), paste(i, y, "expression_data", sep="_"))
+		colnames(df.s0) <- c("ave", "expr")
+		Cor.P <- round(cor(df.s0$ave, df.s0$expr, method="pearson", use="pairwise.complete.obs"), digits=2)
+		Cor.S <- round(cor(df.s0$ave, df.s0$expr, method="spearman", use="pairwise.complete.obs"), digits=2)
+		scatter_plot_seven <- ggplot(df.s0, aes(ave, expr))+geom_point(alpha=1/10, colour="red", size=3, na.rm=T) + xlab(paste(i, y, "DamID_averaged_data: log2(value +1)", sep="_")) + ylab(paste(i, y, "expression_data: log2(value +1)", sep="_")) + geom_text(data = data.frame(), size = 10, hjust=0, aes(max(df.s0$ave, na.rm=T)*0.5, max(df.s0$expr, na.rm=T)*0.9, label =c(paste("Pearson.Cor = ", Cor.P, "\n\n", sep=""), paste("Spearman.Cor = ", Cor.S, sep="")))) + theme_bw() + theme(axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(size=22), axis.text.y=element_text(size=22), legend.position = "none")
+		bmp(filename=file.path(prefixDir, outputBio, paste("Scatter_plots_DamID_averaged_data_vs_expression_values_in_", i, ".", y, ".bmp", sep="")), width=800, height=800, units = "px")
+		par(mfrow=c(1, 1))
+		par(mai=c(1.5, 1.5, 0.7, 0.5))
+		par(cex=1.5)
+		print(scatter_plot_seven)
+		dev.off()
+		# rm(Cor.P, Cor.S, scatter_plot_seven)
+	}
+}
