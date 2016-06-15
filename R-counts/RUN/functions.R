@@ -1,5 +1,19 @@
 #!/usr/bin/R
 # Make samples list file
+# Функция которая переформатирует файл соответствий файлов fastq их коротким названиям в файл для обработки в R
+# Как использовать:
+# MakeSamplesListFile(SOURCE, DAMID)
+# SOURCE - это папка где находятся ваши .RData файлы
+# DAMID - путь до файла, который должен иметь следующий формат
+# > Data.set        fastq.file
+# > [tissue].[protein].[conditions].[replicate]     [file_name].fastq.gz
+
+# Результат работы будет сохранен в переменную samplesList,
+# которая имеет следующие заголовки
+# > id tissue protein conditions replicate path
+# А кроме этого в рабочей директории будет создан файл rdata_description.csv, с содержимым переменной samplesList
+
+# Функция способна корректно обрабатывать .RData файлы содержащие в имени файла следующие строки: edge, inner, _edge, _inner, paired
 ##########################
 MakeSamplesListFile <- function(SOURCE, DAMID) {
 	filePath <- list.files(path=SOURCE, pattern="*_local_GATCcounts.RData", full.names=T, recursive=T)
@@ -56,7 +70,27 @@ MakeSamplesListFile <- function(SOURCE, DAMID) {
 	write.table(samplesList, file="rdata_description.csv", sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F)
 }
 
+# Calculate coordinate for filter
+# Функция для расчетов координат при использовании фильтрации данных
+# Как использовать:
+# X.Coord <- sapply(your_dataframe, CalculateCoordinate, y=1)
+# Y.Coord <- sapply(your_dataframe, CalculateCoordinate, y=2)
+# your_dataframe - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+#################################
+CalculateCoordinate <- function(x, y){
+  if (index[x] == T){
+    RhsMatrix <- matrix(c(-1*Intercept,-(DATA.filter[x, 9]+DATA.filter[x, 8]/Slope)), nrow=2, ncol=1, byrow=T)
+    Result <- Coef.Matrix %*% RhsMatrix
+    Result[y,1]
+  }
+}
+
 # Write intermediate files function
+# Простая функция, которая записывает на диск содержимое переменной
+# Как использовать:
+# WriteIntermediateFiles(source, output.file)
+# source - переменная, которую необходимо записать на диск, лучше использовать dataframe
+# output.file - название файла с расширением (обычно это csv или txt), который будет сохранен в подпапку в вашей рабочей директории. Имя подпапки определяется перменной prefixDir
 ################################### 
 	WriteIntermediateFiles <- function(source, output.file) {
 		if (writeTemp == T) {
@@ -68,6 +102,13 @@ MakeSamplesListFile <- function(SOURCE, DAMID) {
 	}
 
 # Pearson and spearman correlations function
+# Мини-функции, которые используются в других функциях: MainCorrelations, HeatmapBySelection.
+# Необходимы для построения корреляции Pearson&Spearman "всех со всеми"
+# Как использовать:
+# PearsonAndSpearmanCorrelations(dataSet, use.method, use.opt)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# use.method - два возможных варианта - "pearson", "spearman"
+# use.opt - смотри справку по параметру use функции cor
 ############################################
 PearsonAndSpearmanCorrelations <- function(dataSet, use.method, use.opt) {
 	corr <- matrix(data=NA, nrow=ncol(dataSet)-7, ncol=ncol(dataSet)-7, byrow=T)
@@ -82,6 +123,10 @@ PearsonAndSpearmanCorrelations <- function(dataSet, use.method, use.opt) {
 	rm(j)
 		invisible(corr)
 }
+# PearsonAndSpearmanCorrelationsHeatmapMod(dataSet1, dataSet2, use.method, use.opt)
+# dataSet1, dataSet2 - два разных dataframe со свойствами аналогичным dataSet
+# остальные переменные аналогичны переменным из функции PearsonAndSpearmanCorrelations
+
 PearsonAndSpearmanCorrelationsHeatmapMod <- function(dataSet1, dataSet2, use.method, use.opt) {
 	corr <- matrix(data=NA, nrow=ncol(dataSet1)-7, ncol=ncol(dataSet2)-7, byrow=T)
 		rownames(corr) <- names(dataSet1)[8:(ncol(dataSet1))]
@@ -97,12 +142,25 @@ PearsonAndSpearmanCorrelationsHeatmapMod <- function(dataSet1, dataSet2, use.met
 }
 
 # Combine samples function
+# Функция в тестовом режиме, необходима была для объединения произвольных пар столбцов в один. На вход принимает переменную содержащую таблицу для такой обработки. Сейчас функция не применяется.
 ##########################
 CombineSamples <- function(dataFrame) {
 	with(dataFrame, data.frame(DAM.1=`DAM-1.FCC4JPEACXX_L6_R1` + `DAM-1.FCC4JPEACXX_L6_R2`, DAM.2=`DAM-2.FCC4JPEACXX_L6_R1` + `DAM-2.FCC4JPEACXX_L6_R2`, LAM.1=`LAM-1.FCC4JPEACXX_L6_R1` + `LAM-1.FCC4JPEACXX_L6_R2`, LAM.2=`LAM-2.FCC4JPEACXX_L6_R1` + `LAM-2.FCC4JPEACXX_L6_R2`))
 }
 
 # Main correlations function
+# Функция, которая считает корреляцию Спирмана и Пирсона в наборе данных и выводит эту информацию в виде текстового файла и pdf с тепловой картой в папку prefixDir
+# Как использовать:
+# MainCorrelations(dataSet, corrMethod, labelHeatmap, use.opt="everything", suffixCSV, suffixPDF, corr.on.file, createPDF=T, counts=F)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# corrMethod - текстовый вектор, содержащий варианты корреляций. Смотри справку по параметру method функции cor
+# labelHeatmap - вектор, содержащий информацию о том нужно ли включать плотность в тепловую карту или нет. "B" - включает информацию о плотности и убирает легенду, любой другой ключ делает всё наоборот
+# use.opt - смотри справку по параметру use функции cor
+# suffixCSV - Произвольная метка для имени csv файла
+# suffixPDF - Произвольная метка для имени pdf файла, работает только если параметр createPDF = TRUE
+# corr.on.file - имя csv файла откуда были взяты данные для расчета корреляции
+# createPDF - создавать или нет pdf с тепловой картой
+# counts - логическая переменная, должна быть TRUE, когда suffixCSV содержит "Counts"
 ############################
 MainCorrelations <- function(dataSet, corrMethod, labelHeatmap, use.opt="everything", suffixCSV, suffixPDF, corr.on.file, createPDF=T, counts=F) {  
 	for (m in corrMethod) {
@@ -131,6 +189,15 @@ MainCorrelations <- function(dataSet, corrMethod, labelHeatmap, use.opt="everyth
 }
 
 # ACF on data function
+# Функция для расчета автокорреляции и плотности распределения GATC фрагментов. Результат работы pdf файл в папке prefixDir
+# Как использовать:
+# AcfOnData(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# labelAcf - метка "A_ALL" которая указывает на использование всего набора данных, любая другая метка будет использовать положительный набор данных по микрочипам
+# method - метод расчета, автокорреляция "acf" или плотность "density"
+# suffixPDF - Произвольная метка для имени pdf файла
+# ylab.val - подпись оси y
+# na.data - если TRUE, тогда значения NA будут удалены из dataSet
 ######################
 AcfOnData <- function(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data) {
 	for (label in labelAcf) {
@@ -170,6 +237,10 @@ AcfOnData <- function(dataSet, labelAcf, method, suffixPDF, ylab.val, na.data) {
 }
 
 # DamID to WIG&GFF function
+# Функция для представления обработанных данных в формате wig или gff, файлы сохраняются в папке outputWig или outputGff
+# Как использовать:
+# DamIdSeqToWigGff(dataSet)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
 ###########################
 DamIdSeqToWigGff <- function(dataSet) {
 	for (step in c(1:2)) {
@@ -219,6 +290,11 @@ DamIdSeqToWigGff <- function(dataSet) {
 }
 
 # Scatter Plots on Averaged data function
+# Функция для создания визуализации распределения данных, bmp файлы сохраняются в папке outputScttr
+# Как использовать:
+# ScatterPlotting3D(dataSet, tag)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# tag - произвольный текстовый вектор длиной 1
 #########################################
 ScatterPlotting3D <- function(dataSet, tag) {
 	for (j in unique(sub("([a-zA-Z_\\.]+)\\.[0-9].*", "\\1", names(dataSet)[-c(1:7)], perl=T))) {
@@ -246,7 +322,14 @@ ScatterPlotting3D <- function(dataSet, tag) {
 		}
 	}
 }
+
 # FeatureCalls to GFF function
+# Функция, которая формирует домены объединенные по признаку feature.type
+# Как использовать:
+# you_variable <- FeatureCalls.to.GFF.like(start.coordinate, end.coordinate, feature.type)
+# start.coordinate - столбец в таблице с точками начала района
+# end.coordinate - столбец в таблице с точками конца района
+# feature.type - столбец в таблице по которому надо производить объединение данных
 ##############################
 FeatureCalls.to.GFF.like <- function(start.coordinate, end.coordinate, feature.type) {
    e.ind <- cumsum(rle(feature.type)$lengths)
@@ -255,31 +338,11 @@ FeatureCalls.to.GFF.like <- function(start.coordinate, end.coordinate, feature.t
    invisible(gff)
 }
 
-# Run biological Headen Mark Model function
-###########################################
-runBioHMM <- function (mval, datainfo, useCloneDists = TRUE, criteria = "AIC", delta = NA, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
-	crit = TRUE
-	if (criteria == "AIC") {
-		aic = TRUE
-		bic = FALSE
-	} else if (criteria == "BIC") {
-		bic = TRUE
-		aic = FALSE
-	} else crit = FALSE
-	if ((crit == 1) || (crit == 2)) {
-		if (criteria == "BIC") {
-			if (is.na(delta)) {
-				delta <- c(1)
-			}
-		}
-		res <- try(fit.model(obs = mval, datainfo = datainfo, useCloneDists = useCloneDists, aic = aic, bic = bic, delta = delta, var.fixed = var.fixed, epsilon = epsilon, numiter = numiter))$out.list$state
-	}
-	else {
-		cat("You must enter AIC or BIC for the criteria argument\n")
-	}
-}
-
-# Use fit third-clustering model function 
+# Use fit third-clustering model function
+# Это модифицированная функция из пакета snapCGH,
+# с установленным ограничением на поиск трех возможных
+# cостояний по скрытой марковской модели. Используется
+# в функции runBioHMM
 #########################################
 fit.model <- function (obs, datainfo = NULL, useCloneDists = TRUE, aic = TRUE, bic = FALSE, delta = 1, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
     kb <- datainfo$start 
@@ -354,22 +417,51 @@ fit.model <- function (obs, datainfo = NULL, useCloneDists = TRUE, aic = TRUE, b
     list(out.list = out.all, nstates.list = numstates)
 }
 
-# Calculate coordinate for filter
-#################################
-CalculateCoordinate <- function(x, y){
-  if (index[x] == T){
-    RhsMatrix <- matrix(c(-1*Intercept,-(DATA.filter[x, 9]+DATA.filter[x, 8]/Slope)), nrow=2, ncol=1, byrow=T)
-    Result <- Coef.Matrix %*% RhsMatrix
-    Result[y,1]
-  }
+# Run biological Headen Mark Model function
+# Это модифицированная функция из пакета snapCGH.
+# Как использовать:
+# you_variable <- runBioHMM(mval, datainfo)
+# mval - столбец из datainfo, содержащий значения для обработки HMM
+# datainfo - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+###########################################
+runBioHMM <- function (mval, datainfo, useCloneDists = TRUE, criteria = "AIC", delta = NA, var.fixed = FALSE, epsilon = 1e-06, numiter = 30000) {
+	crit = TRUE
+	if (criteria == "AIC") {
+		aic = TRUE
+		bic = FALSE
+	} else if (criteria == "BIC") {
+		bic = TRUE
+		aic = FALSE
+	} else crit = FALSE
+	if ((crit == 1) || (crit == 2)) {
+		if (criteria == "BIC") {
+			if (is.na(delta)) {
+				delta <- c(1)
+			}
+		}
+		res <- try(fit.model(obs = mval, datainfo = datainfo, useCloneDists = useCloneDists, aic = aic, bic = bic, delta = delta, var.fixed = var.fixed, epsilon = epsilon, numiter = numiter))$out.list$state
+	}
+	else {
+		cat("You must enter AIC or BIC for the criteria argument\n")
+	}
 }
+
 
 # Make Venn diagram
 ###################
-pcentFun <- function(x,y) {
+pcentFun <- function(x, y) {
 	100 * (x / y)
 }
+
 # !!! Before use this function, please perform this instructions: http://stackoverflow.com/a/15315369/4424721
+# Функция создающая pdf файл, содержащий Венн диаграмму, зависящую от веса значений и выраженных в абсолютных и относительных значениях
+# Как использовать:
+# MakeVennDiagram(x, set, v1, v2)
+# x - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# set - регулярное выражение, описывающее имена столбцов из x используемые для анализа
+# v1, v2 - текстовый вектор содержащий названия тканей и/или белков, чьи комбинации необходимо проанализировать
+# Пример:
+# MakeVennDiagram(x=DATA.venn, set=paste(t.s,".*bound", sep=""), v1=t.s, v2="LAM, HP1, PC")
 #############################################################################################################
 MakeVennDiagram <- function(x, set, v1, v2) {
 	compare.by.venn.df <- x[, grep(set, names(x)[8:ncol(x)], perl=T, value=T)]
@@ -407,6 +499,14 @@ MakeVennDiagram <- function(x, set, v1, v2) {
 }
 
 # Generate heatmap from custom selection
+# Функция создает тепловую карту из различных сочетаний столбцов в используемой таблице, файлы pdf создаются в папке prefixDir/outputHeatmap 
+# Как использовать:
+# HeatmapBySelection(dataSet, corrMethod, use.opt)
+# dataSet - dataframe с координатами GATC фрагментов, который содержит 7 столбцов от GATCs.txt и не менее 1 столбца с данными DamID
+# corrMethod - смотри справку к параметру method функции cor
+# use.opt - смотри справку к параметру use функции cor
+# Пример:
+# HeatmapBySelection(dataSet=DATA.part, corrMethod=corrMethod, use.opt="pairwise.complete.obs")
 ########################################
 MakeHeatmapToPdf <- function(input, item1, item2, vs_name, method) {
 	input <- as.matrix(input)
@@ -451,6 +551,15 @@ HeatmapBySelection <- function(dataSet, corrMethod, use.opt) {
 	}
 }
 # Function for generate multiplot grafs
+# Функция, которая размещает много различных графиков на одной или нескольких страницах одного файла. Используется вместе с пакетом ggplot2 и функцией ggplot
+# Как использовать:
+# print(multiplot(..., plotlist, cols, layout))
+# ... - перечисление переменных ggplot
+# plotlist - переменные ggplot в виде списка
+# cols - укажите необходимое число колонок в файле
+# layout - это матрица, указывающая расположение переменных на странице. Расчитывается автоматически, но можно и указать явно как расположить элементы
+# Пример:
+# print(multiplot(plotlist=tid2_list1, cols=3, layout=matrix(c(1:3), ncol = 3, nrow = 1, byrow=T)))
 #######################################
 multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   library(grid)
@@ -472,6 +581,15 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 }
 
 # Statistical functions about domains size
+# Статистическая функция, создает csv файл в папке prefixDir/outputBio с отчетом о суммарном размере доменов белков в различных тканях в долях от полного генома
+# Как использовать:
+# MakeReportDomainsSize(inputData, dscr, includeHet=T)
+# inputData - объект типа list, содержащий таблицы с заголовками:
+#  > seqname	source	feature	start	end	score	strand	frame	attribute
+# dscr - отметка в имени файла, опционально
+# includeHet - если TRUE, тогда для анализа будут использованы Het хромосомы
+# Пример:
+# MakeReportDomainsSize(DOMAIN.data.filt, "filtered", includeHet=F)
 ##########################################
 MakeReportDomainsSize <- function(inputData, dscr, includeHet=T) {
 	domainSizeReport <- as.data.frame(matrix(NA, nrow=0, ncol=5))
@@ -504,6 +622,18 @@ MakeReportDomainsSize <- function(inputData, dscr, includeHet=T) {
 
 
 # Intersect domains between them
+# Функция, которая находит общие домены и антидомены в различных комбинациях доменов и антидоменов белков и тканей.
+# В результате работы функции создаются gff файлы в папке prefixDir/outputGff/outputDomain/dscr
+# Как использовать:
+# IntersectDomain(inputData, Tset, Pset, dscr, ScoreValue)
+# inputData - объект типа list, содержащий таблицы с заголовками:
+#  > seqname	source	feature	start	end	score	strand	frame	attribute
+# Tset - текстовый вектор с наборами тканей используемых для анализа
+# Pset - текстовый вектор с наборами тканей используемых для анализа
+# dscr - маркировка набора данных
+# ScoreValue - принимает значения -1 или 1, для антидоменов и доменов соответственно
+# Пример:
+# IntersectDomain(inputData=DOMAIN.data, Tset=tissue_bio_set, Pset=protein_bio_set, dscr="constitutive", ScoreValue=1)
 ################################
 IntersectDomain <- function(inputData, Tset, Pset, dscr, ScoreValue) {
 	DOMAIN.data.part <- inputData[grep(paste("(", paste(tissue_bio_set, collapse="|"), ")\\.(", paste(protein_bio_set, collapse="|"), ")\\.(", paste(conditions_bio_set, collapse="|"), ")\\..*", sep="") ,names(inputData), perl=T)]
@@ -585,6 +715,10 @@ IntersectDomain <- function(inputData, Tset, Pset, dscr, ScoreValue) {
 }
 
 # Split dataframe from column to row
+# Функция, которая преобразует таблицу - меняет местами колонки со строками
+# Как использовать:
+# SplitDfFromColToRow(data)
+# data - объект типа dataframe
 ####################################
 SplitDfFromColToRow <- function (data) {
 	if (ncol(data) %% 2 == 0) {
@@ -603,18 +737,52 @@ SplitDfFromColToRow <- function (data) {
 }
 
 # Assign GATCs damID values to Genes position
+# Функция, которая устанавливает соответствие между координатами GATC фрагментов и положением генов
+# Как использовать:
+# your_variable <- AssignGATCsToGenes(Genes, GATCs, und=F, tissue.damid="", use.und.domain=F)
+# Genes - объект типа dataframe с заголовками 
+# > ID chr start end ratio
+# GATCs - объект типа dataframe с заголовками 
+# > ID chr start end any_GATC_values
+# und - когда TRUE для анализа используются данные по недорепликации
+# tissue.damid - только когда use.und.domain = FALSE, метка ткани, которую нужно использовать для анализа
+# use.und.domain - использование данные по недорепликации в доменах TRUE, или "сырых" данных по недорепликации FALSE - по умолчанию
+# Пример:
+# und_vs_gatc <- AssignGATCsToGenes(UndData.list[[i]], gatcUnd, und=T, tissue.damid="FB")
 #############################################
-AssignGATCsToGenes <- function(Genes, GATCs){
-Results <- as.data.frame(nonzero(regionOverlap(Genes, GATCs)))
-colnames(Results) <- c("RowNumber", "ColNumber")
-CompareResults <- cbind(GATCs[Results$ColNumber, c("ID","chr","start","end")], data.frame("Genes.ID" = Genes$ID[Results$RowNumber], "TSS" = Genes$start[Results$RowNumber], "strand" = Genes$strand[Results$RowNumber]))
-rownames(CompareResults) <- NULL
-return(CompareResults)
+AssignGATCsToGenes <- function(Genes, GATCs, und=F, tissue.damid="", use.und.domain=F) {
+	gr_genes <- makeGRangesFromDataFrame(Genes, keep.extra.columns=T)
+	gr_gatcs <- makeGRangesFromDataFrame(GATCs, keep.extra.columns=T)
+	Results <- as.data.frame(findOverlaps(gr_genes, gr_gatcs))
+	if (und == F) {
+		# For expression data
+		CompareResults <- cbind(GATCs[Results$subjectHits, c("ID","chr","start","end")], data.frame("Genes.ID" = Genes$ID[Results$queryHits], "TSS" = Genes$start[Results$queryHits], "strand" = Genes$strand[Results$queryHits]))
+	} else {
+		if (use.und.domain == F) {
+			# For underreplication data
+			if (nchar(tissue.damid) > 0) gatcNames <- c("ID","chr","start","end",grep(paste(tissue.damid, ".*", sep=""), names(GATCs), perl=T, value=T)) else gatcNames <- c("ID","chr","start","end")
+			CompareResults <- cbind(GATCs[Results$subjectHits, gatcNames], Genes[Results$queryHits, "ratio"])
+			names(CompareResults)[ncol(CompareResults)] <- "ratio"
+			} else {
+				# For underreplication domain data
+				CompareResults <- GATCs
+				CompareResults$fb_und_domain <- 1
+				CompareResults$fb_und_domain[Results$subjectHits] <- 0
+			}
+	}
+	CompareResults <- CompareResults[with(CompareResults, order(chr, ID)), ]
+	rownames(CompareResults) <- NULL
+	return(CompareResults)
 }
 
 # Count Occurences :)
+# Функция, которая считает количество вхождений набора символов в строке
+# Как использовать:
+# CountOccurrencesInCharacter(char, s)
+# char - искомая строка или символ
+# s - текстовая строка в которой производится поиск
 #####################
 CountOccurrencesInCharacter <- function(char, s) {
     s2 <- gsub(char,"",as.character(s))
-    return ((nchar(as.character(s)) - nchar(s2))/4)
+    return ((nchar(as.character(s)) - nchar(s2))/nchar(char))
 }

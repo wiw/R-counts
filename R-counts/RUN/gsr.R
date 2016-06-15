@@ -27,11 +27,13 @@ source(file.path(wds, "damID_prepare.R"))
 # Run bioHMM function and domain interpretations
 source(file.path(wds, "domains.R"))
 
+# Run biological search
+source(file.path(wds, "meaning.R"))
+
 # Run calculate on expression data
 source(file.path(wds, "expression.R"))
 
 # load garbadge code
-####################
 # source(file.path(wds, "gccode.R"))
 
 # Run testing code

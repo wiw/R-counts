@@ -4,24 +4,56 @@
 #######################################################################
 
 # Intersect with promoters only
+# Подготовительные процедуры, поиск пересечений между координатами GATC фрагментов и как промоторами генов так и полным телом гена
 ###############################
 gatcG <- read.delim(gatcFile4Genes, header=T, sep="\t", stringsAsFactors=F)
 Genes <- read.delim(genesFilePath, header=T, as.is=T, dec=".")
 Genes <- Genes[Genes$chr %in% intersect(unique(Genes$chr), unique(gatcG$chr)),]
 gatcG <- gatcG[gatcG$chr %in% intersect(unique(Genes$chr), unique(gatcG$chr)),]
 Genes[Genes$strand == "+", "end"] <- Genes[Genes$strand == "+", "start"]
-Genes[Genes$strand == "-", "start"] <- Genes[Genes$strand == "-", "end"]
+Genes[Genes$strand == "-", "start"] <- Genes[Genes$strand == "-", "end"] # Gene position like as point
+
+# Таблица соответствия между GATC.ID (ID) и Genes.ID, имеет следующую структуру:
+#              ID chr start   end    Genes.ID   TSS strand
+# 1 r5GATC2L00040  2L  6923  7693 FBgn0031208  7529      +
+# 2 r5GATC2L00081  2L 21359 21643 FBgn0002121 21372      -
+# 3 r5GATC2L00091  2L 25086 26562 FBgn0031209 25151      -
+# Пересечение происходит между протяженными GATC фрагментами и точечными координатами промоторов
 GATCvsGenes <- AssignGATCsToGenes(Genes, gatcG)
+
+# Установка соответствия между именем GATC фрагмента в GATCvsGenes и его положением в gatcG
 idx.gatc.ori <- unlist(sapply(GATCvsGenes$ID, function(x) grep(x, gatcG$ID)))
 GATCvsGenes.List <- list()
 
 # Intersect with gene body
 ##########################
-GenesOrig <- read.delim(genesFilePath, header=T, as.is=T, dec=".")
+GenesOrig <- read.delim(genesFilePath, header=T, as.is=T, dec=".") # Gene occupies a certain domain
+
+# Поиск GATC фрагментов которые полностью или частично перекрывыаются с телом гена
+# таблица имеет следующую структуру:
+#              ID chr start   end    Genes.ID  TSS strand
+# 1 r5GATC2L00040  2L  6923  7693 FBgn0031208 7529      +
+# 2 r5GATC2L00041  2L  7694  7716 FBgn0031208 7529      +
+# 3 r5GATC2L00042  2L  7717  8552 FBgn0031208 7529      +
+# 4 r5GATC2L00043  2L  8553  8796 FBgn0031208 7529      +
+# 5 r5GATC2L00044  2L  8797  9694 FBgn0031208 7529      +
+# 6 r5GATC2L00047  2L  9803 12441 FBgn0002121 9836      -
+# Пересечение происходит между протяженными GATC фрагментами и протяжнными координатами тела гена.
+# Отдельно указывается сайт инициации транскрипции (TSS)
 GATCvsGenesOrig <- AssignGATCsToGenes(GenesOrig, gatcG)
+
+# Установка соответствия между именем GATC фрагмента в GATCvsGenes и его положением в gatcG
 idx.gatc.ori.body <- unlist(sapply(GATCvsGenesOrig$ID, function(x) grep(x, gatcG$ID)))
 GATCvsGenesOrig.List <- list()
 
+# Формирование списка dfExpression.List, состоящего из объектов типа dataframe,
+# в котором указаны нормированные данные по экспрессии генов в соответствующих тканях
+#            id   expression
+# 1 FBgn0000003     0.000000
+# 2 FBgn0000008   518.270644
+# 3 FBgn0000014     8.965697
+# 4 FBgn0000015     1.159844
+#########################
 dfExpression.List <- list()
 for (i in tissue_bio_set) {
 	tissueSelection <- list.files(path=exprDataDir, pattern=paste(i, "_.*", sep=""), full.names=T)
@@ -50,13 +82,27 @@ for (i in tissue_bio_set) {
 		names(exprResults) <- c("id", "baseMean")
 	}
 	dfExpression.List[[i]] <- data.frame(id=exprResults$id, expression=exprResults$baseMean)
+
+	# Таблицы GATCvsGenes* записываются в отдельные переменные tmpDF*,
+	# поскольку далее эти переменные будет подвергаться дополнительному форматированию
 	tmpDF <- GATCvsGenes
 	tmpDF.Orig <- GATCvsGenesOrig
 	if (i == "Kc167") {
-		tempDATA <- DATA.part 
+		tempDATA <- DATA.part
 	} else {
 		tempDATA <- cbind(DATAs.norm.ave$DATA, DATAs.ave$DATA[,c(8:ncol(DATAs.ave$DATA))])
 	}
+
+	# 	Конечный результат этого кода форматирование списка, состоящего из объектов типа dataframe такого вида:
+	# 	               ID chr start   end    Genes.ID   TSS strand    BR.LAM.m_all.norm.ave BR.LAM.m_all.ave BR.LAM.m_target BR.LAM.m_target.filt    expression
+	# 40  r5GATC2L00040  2L  6923  7693 FBgn0031208  7529      +          -3.1618273              9.5              -1                   -1			  23.92050
+	# 81  r5GATC2L00081  2L 21359 21643 FBgn0002121 21372      -                  NA              0.0              NA                   NA			5471.38956
+	# 90  r5GATC2L00091  2L 25086 26562 FBgn0031209 25151      -          -1.4555819              6.5              -1                   -1			  25.49604
+	# 172 r5GATC2L00173  2L 58765 59732 FBgn0051973 59242      -           0.3967371             33.5               0                    0			 697.05598
+	# 187 r5GATC2L00188  2L 66423 67274 FBgn0067779 67044      +          -3.6513258             19.0              -1                   -1			1910.33491
+	# 204 r5GATC2L00206  2L 71991 72652 FBgn0031213 72388      +          -3.4053898             10.5              -1                   -1			1336.69455
+	# Эта таблица содержит информацию о положении GATC фрагментов, какие промоторы генов с ними пересекаются, соответствующие значения DamID (нормированные усредненные, только усредненные),
+	# связан ли данный фрагмент с исследуемым белком и данные по экспрессии гена в конкретном районе.
 	for (z in protein_bio_set) {
 		dataSet <- grep(paste(i, "\\.", z, "\\.(", paste(conditions_bio_set, collapse="|"), ")_(all|edge).*",sep=""), names(tempDATA), value=T, perl=T)
 		df <- tempDATA[, c("ID", dataSet)]
@@ -81,11 +127,18 @@ for (i in tissue_bio_set) {
 		names(tmpDF.Orig)[ncol(tmpDF.Orig)] <- names(df)[2]
 	}
 	idx.fbgn.ori <- match(tmpDF$Genes.ID, exprResults$id)
+	if (i != "Kc167") {
+		damCol <- grep(paste(i, "\\.DAM.*", sep=""), names(tempDATA), value=T)
+		tmpDF$DAM <- tempDATA[idx.gatc.ori, damCol]
+		names(tmpDF)[which(names(tmpDF) == "DAM")] <- damCol
+	}
 	tmpDF$expression <- exprResults$baseMean[idx.fbgn.ori]
 	GATCvsGenes.List[[i]] <- tmpDF
 
 	tmpDF.Orig <- tmpDF.Orig[, -c(1:4, 6, 7)]
-	tmpDF.Orig <- ddply(tmpDF.Orig,"Genes.ID",numcolwise(mean, na.rm = TRUE))
+
+	# Для случая пересечения GATC фрагментов с телом гена команда ниже усредняет значения DamID в колонках по строкам
+	tmpDF.Orig <- ddply(tmpDF.Orig, "Genes.ID", numcolwise(mean, na.rm = TRUE)) # Averaging the DamID values in a column by row
 	for (colItem in c(2:ncol(tmpDF.Orig))) tmpDF.Orig[is.nan(tmpDF.Orig[,colItem]) == T, colItem] <- NA
 	idx.fbgn.ori.body <- match(tmpDF.Orig$Genes.ID, exprResults$id)
 	tmpDF.Orig$expression <- exprResults$baseMean[idx.fbgn.ori.body]
@@ -95,6 +148,15 @@ for (i in tissue_bio_set) {
 }
 
 # Count statistic
+# На основе списка GATCvsGenes.List, полученного ранее, формируется графическая статистика зависимости экспрессии генов от связывания белка
+# Статистика представлена в виде боксплота (2-х и 3-х факторные состояния) и гистограммы (2-х факторные)
+# Также в отдельную переменную записывается список Stat_BoxList*, содержащий таблицы вида:
+#   protein bind expression
+# 1     LAM bind  0.8969963
+# 2     LAM bind  0.5171169
+# 3     LAM bind 11.3465865
+# 4     LAM bind  0.0000000
+# Это переменная необходима для рассчета корреляции между различными найденными вариантами
 #################
 Stat_BoxList <- list()
 Stat_BoxList_3ds <- list()
@@ -157,7 +219,10 @@ for (i in names(GATCvsGenes.List)) {
 }
 
 # Count P-value by wilcox-text
-
+# Вычисление коэффициента достоверности, результат выводится сразу в терминал
+# NB! код старый, в файле testing.R  реализовано расчет корреляции и добавление результатов сразу на график
+# В переменной Stat_BoxList хранится статистика для двух представлений
+# В переменной Stat_BoxList_3ds хранится статистика для трех представлений
 for (i in names(Stat_BoxList)) {
 	for (y in levels(Stat_BoxList[[i]]$protein)) {
 		wilcoxStat <- wilcox.test(Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "bind", "expression"], Stat_BoxList[[i]][Stat_BoxList[[i]]$protein == y & Stat_BoxList[[i]]$bind == "not bind", "expression"])
@@ -177,6 +242,7 @@ for (i in names(Stat_BoxList_3ds)) {
 }
 
 # Make Scatter plots comparing gene expression with the protein binding levels at gene promoters and with the averaged protein binding levels at gene bodies
+# Вывод статистической информации по сравнению экспрессии генов с уровнем белкового связывания в виде графика распределения (scatter plot's)
 for (i in c("BR", "FB", "Kc167")) {
 	selectColumns <- grep(paste(i, ".*norm\\.ave", sep="") ,names(GATCvsGenes.List[[i]]), perl=T)
 	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputScttr)), dir.create(file.path(prefixDir, outputBio, outputScttr), showWarnings=FALSE), FALSE)
@@ -213,6 +279,8 @@ for (i in c("BR", "FB", "Kc167")) {
 }
 
 # Find common GATC's by protein
+# Пересечение данных DamID разных тканей одного белка между собой. Варианты комбинаций генерируются автоматически при помощи функции combn.
+# Но выборка из этих комбинаций осуществляется в ограниченном режиме: подбор комбинаций от 2-х до 5-ти тканей. Результат представлен графически в виде биржевой диаграммы
 ###############################
 options("scipen"=4, "digits"=4)
 Stat_ProtList <- list()
@@ -288,6 +356,7 @@ for (protein in protein_bio_set){
 }
 
 # Find common GATC's by tissues
+# Пересечение данных DamID от разных белков одной ткани между собой.
 ###############################
 Stat_TissList <- list()
 for (i in names(GATCvsGenes.List)) {
@@ -306,8 +375,8 @@ for (i in names(GATCvsGenes.List)) {
 			dfSel <- data.frame(vecSel=GATCvsGenes.List[[i]][[vecSel]])
 		}
 	}
-	dfSel <- cbind(dfSel, "expression"=GATCvsGenes.List[[i]][, ncol(GATCvsGenes.List[[i]])])
-	colnames(dfSel)[1:ncol(dfSel)-1] <- vecSelnames
+	dfSel <- cbind(dfSel, "expression" = GATCvsGenes.List[[i]][, ncol(GATCvsGenes.List[[i]])], "chr" = GATCvsGenes.List[[i]][, which(names(GATCvsGenes.List$BR) == "chr")])
+	colnames(dfSel)[1:(ncol(dfSel)-2)] <- vecSelnames
 	
 	# Filter bound data by replace "-1" to "0" and remove "NA"
 	setOfcolumns <- grep(".*target$", names(dfSel), perl=T)
@@ -323,36 +392,36 @@ for (i in names(GATCvsGenes.List)) {
 			columns_list <- append(columns_list, combn(setOfcolumns, y, simplify=F))
 		}
 	}
+
 	# Comparison of the binding between the various combinations of protein and make report
 	for (column_item_list in columns_list) {
 		column_item <- unlist(column_item_list)
 		if (length(column_item) == 1) {
-			dfPlus <- dfSel[dfSel[, column_item[1]] == 1, c(column_item, ncol(dfSel))]
-			dfZero <- dfSel[dfSel[, column_item[1]] == 0, c(column_item, ncol(dfSel))]
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
 		} else if (length(column_item) == 2) {
-			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1, c(column_item, ncol(dfSel))]
-			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0, c(column_item, ncol(dfSel))]
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
 		} else if (length(column_item) == 3) {
-			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1 & dfSel[, column_item[3]] == 1, c(column_item, ncol(dfSel))]
-			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0 & dfSel[, column_item[3]] == 0, c(column_item, ncol(dfSel))]
+			dfPlus <- dfSel[dfSel[, column_item[1]] == 1 & dfSel[, column_item[2]] == 1 & dfSel[, column_item[3]] == 1, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
+			dfZero <- dfSel[dfSel[, column_item[1]] == 0 & dfSel[, column_item[2]] == 0 & dfSel[, column_item[3]] == 0, c(column_item, ncol(dfSel)-1, ncol(dfSel))]
 		} else {
 			print("")
 		}
 		dfPlus <- na.omit(dfPlus)
 		dfZero <- na.omit(dfZero)
 		dfCompare <- rbind(dfPlus, dfZero)
-		plotTitle <- sub(".*(LAM|HP1|PC).*", "\\1", names(dfCompare)[1:ncol(dfCompare)-1], perl=T)
-		dfCompare <- dfCompare[, c(1, ncol(dfCompare))]
-		colnames(dfCompare) <- c("bound", "expression")
+		plotTitle <- sub(".*(LAM|HP1|PC).*", "\\1", names(dfCompare)[1:(ncol(dfCompare)-2)], perl=T)
+		dfCompare <- dfCompare[, c(1, ncol(dfCompare)-1, ncol(dfCompare))]
+		colnames(dfCompare) <- c("bound", "expression", "chr")
 		dfCompare$bound <- factor(dfCompare$bound, labels=c("Not bound", "Bound"))
 		dfCompare$expression <- log2(dfCompare$expression + 1)
 		TissName <- paste(plotTitle, collapse="_vs_")
 		Stat_TissList[[i]][[TissName]] <- dfCompare
 	}
 	boxplot_compare_folder <- "Boxplot_by_common_proteins_domains"
-	# tissue_category_folder <- i
 	ifelse(!dir.exists(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder)), dir.create(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder), showWarnings=FALSE), FALSE)
-	# ifelse(!dir.exists(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, tissue_category_folder)), dir.create(file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, tissue_category_folder), showWarnings=FALSE), FALSE)
+
 	# count cases and p-value
 	Plot_TissList <- list()
 	for (item in names(Stat_TissList[[i]])) {
@@ -363,6 +432,7 @@ for (i in names(GATCvsGenes.List)) {
 		y.coord <- c((fivenum(df5[df5$bound == "Not bound", "expression"]))[4] + max(df5$expression) * 0.05, (fivenum(df5[df5$bound == "Bound", "expression"]))[4] + max(df5$expression) * 0.05, max(df5$expression) * 0.95)
 		pValue <- (wilcox.test(df5[df5$bound == "Bound", "expression"], df5[df5$bound == "Not bound", "expression"]))$p.value
 		# end of
+		
 		Plot_TissList[[item]] <- ggplot(aes(y=expression, x=bound, fill=bound), data=df5) + geom_boxplot() + labs(title=item) + annotate("text", x = x.coord, y = y.coord, label = c(UB, B, paste("Wilcoxon test\nP-value: ", format(pValue, digits=7, width=11), sep="")), size=4) + theme(legend.position="none")
 	}
 	pdf(file=file.path(prefixDir, outputBio, outputExpr, boxplot_compare_folder, paste(paste("Gene expression in the", i, "common protein targets", paste(plotTitle, collapse=" vs "), sep=" "), "pdf", sep=".")), width=14, height=14)
@@ -373,6 +443,7 @@ for (i in names(GATCvsGenes.List)) {
 options(scipen = 999)
 
 # Count housekeeping genes located in various combinations of constitutive «anti»domains
+# Вычисление количества генов "домашнего хозяйства" в различных комбинациях тканей в пределах одного белка
 ########################################################################################
 if (exists("HKCount") == T | exists("HKGenesFile") == T | exists("OrdCount") == T | exists("OrGenesFile") == T) rm(HKCount, HKGenesFile, OrdCount, OrGenesFile)
 HKGenes <- read.csv(HKGenesPath, stringsAsFactors=F)
@@ -412,6 +483,8 @@ for (comb in names(COMPARE.data.antidomains)) {
 
 	}
 }
+
+# "Интелектуальная" сортировка списка комбинаций тканей. Сначала идут парные комбинации, затем тройные и в конце комбинации из пяти тканей
 if (exists("df1") == T | exists("df2") == T | exists("df3") == T | exists("df3") == T) rm(df1, df2, df3, df4)
 for (i in c(1:nrow(HKCount))) {
 	OccurrencesCount <- CountOccurrencesInCharacter("_vs_", HKCount$stringBetween[i])
@@ -428,6 +501,7 @@ for (i in c(1:nrow(HKCount))) {
 	}
 }
 HKCount <- rbind (df1, df2, df3, df4)
+
 if (exists("df1") == T | exists("df2") == T | exists("df3") == T | exists("df3") == T) rm(df1, df2, df3, df4)
 for (i in c(1:nrow(OrdCount))) {
 	OccurrencesCount <- CountOccurrencesInCharacter("_vs_", OrdCount$stringBetween[i])
@@ -446,6 +520,7 @@ for (i in c(1:nrow(OrdCount))) {
 OrdCount <- rbind (df1, df2, df3, df4)
 rm(df1, df2, df3, df4)
 
+# Визуализация полученных данных в виде точечного графика
 HKCount$stringBetween <- factor(HKCount$stringBetween, levels=unique(as.character(HKCount$stringBetween)))
 write.table(HKCount, file=file.path(prefixDir, outputBio, "Housekeepeng_Genes_counts.csv"), sep=";", row.names=F, col.names=T, quote=F, dec=".", append=F, eol="\r\n")
 save(HKGenesFile, file=file.path(prefixDir, outputBio, "Housekeepeng_Genes_list.RData"))

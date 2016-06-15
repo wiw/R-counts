@@ -7,6 +7,7 @@ MakeSamplesListFile(sourceDir, damIdLocation)
 
 # Load GATC counts in data frame
 ################################
+# Проверка на предыдущие запуски программы. Если не было, то тогда gatc файл создается заново
 if (startCol == 0) {
 	step01 <- read.delim(alreadyRun, header=T, as.is=T, dec=".")
 	startCol <- ncol(step01)
@@ -14,6 +15,7 @@ if (startCol == 0) {
 } else {
 	gatcs <- read.delim(gatcFile, header=T, as.is=T, dec=".")
 }
+# Из функции MakeSamplesListFile. Если есть edge/inner риды, тогда одна обработка, если нет - другая 
 if (ludoLabel == F) {
 	if (onlyEdge == T) {
 		samplesList <- samplesList[grep("edge" ,samplesList$id), ]
@@ -27,9 +29,11 @@ if (ludoLabel == F) {
 	modS$id <- sub("(.+)(\\.[0-9]?)$", paste("\\1", "_all", "\\2", sep=""), modS$id, perl=T)
 	modS$conditions <- sub("(.+)", paste("\\1", "_all", sep=""), modS$conditions, perl=T)
 }
+# Нужно ли использовать не весь набор данных в файле с образцами
 if (needSomeFiles == T) {
 	samplesList <- samplesList[useSomeFiles, ]
 }
+# Объединение координат gatcs фрагментов и данных DamID
 gatcs <- cbind(gatcs, matrix(data=NA, nrow=nrow(gatcs), ncol=nrow(samplesList)))
 for (i in 1:nrow(samplesList)){
 	colnames(gatcs)[startCol+i] <- samplesList$id[i]
@@ -37,6 +41,7 @@ for (i in 1:nrow(samplesList)){
 	if (all(gatcs$ID.il == reads2GATC$ID)) gatcs[, startCol + i] <- reads2GATC$count
 }
 rm(i)
+# Если присутствуют edge/inner риды, тогда переменные gatcs и samplesList перезаписываются в соответствии с этими условиями
 if (ludoLabel == F) {
 	if (onlyEdge != T) {
 		modG <- gatcs[, c(1:7, grep("edge", names(gatcs)))]
@@ -67,6 +72,7 @@ WriteIntermediateFiles(source=gatcs, output.file=load.gatc.df)
 WriteIntermediateFiles(source=DATA, output.file=use.chr.only)
 
 # Filter DATA
+# Фильтрация данных DamID. Производится поиск максимальной корреляции между репликами при различном размере выборки. А затем отбрасыываются те данные которые не попали в выборку
 #############
 print("Start filtering data")
 set <- unique(sub("(.*)\\.([0-9]?)$", "\\1", names(DATA)[8:length(DATA)], perl=T))
@@ -297,7 +303,8 @@ for (name in names(DATAs.rpm)) {
 # Averaging Replicates before Normalization
 ###########################################
 		DATAs.ave[[name]] <- DATAs.ave[[name]][, -c(8:ncol(DATAs.ave[[name]]))]
-		listAve <- samplesList[!(samplesList$protein == "DAM"), c(1:5)]  # remove row's with DAM
+		# listAve <- samplesList[!(samplesList$protein == "DAM"), c(1:5)]  # remove row's with DAM
+		listAve <- samplesList[, c(1:5)]
 		listAve$average <- paste(listAve$tissue, listAve$protein, listAve$conditions, sep=".")
 		uniqueAveSamples <- unique(listAve$average)
 		for (item in uniqueAveSamples) {
